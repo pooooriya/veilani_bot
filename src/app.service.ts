@@ -74,6 +74,37 @@ export class AppService {
         Logger.log(`Telegram Vote Error: ${err.message}`);
       });
   }
+
+  @Cron(CronExpression.EVERY_DAY_AT_6PM, {
+    timeZone: 'Asia/Tehran',
+  })
+  async sendVeilaniPool2(): Promise<void> {
+    const nDate = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Tehran',
+    });
+    console.log(nDate);
+    Logger.log('Telegram Vote Sending ...');
+    this.bot
+      .sendPoll(
+        '-1001831838740',
+        'امشب ساعت چند کانتر ویلانی رو راه بندازیم؟',
+        VoteOptions.map((x) => x.title),
+        {
+          is_anonymous: false,
+          allows_multiple_answers: false,
+          disable_notification: false,
+        },
+      )
+      .then(() => {
+        // TODO: do this part
+        // this.cacheManager.set('vote', res, 43200000); //12 hour cached !
+        Logger.log('Telegram Vote Sent Successfully');
+        // Logger.log('Telegram Vote Stored in MemoryCache');
+      })
+      .catch((err) => {
+        Logger.log(`Telegram Vote Error: ${err.message}`);
+      });
+  }
   // TODO :
   // @Cron('0 */30 21-23 * * *')
   // async stopPool(): Promise<void> {
