@@ -6,8 +6,6 @@ FROM node:16-alpine as development
 
 # Optionally authenticate NPM registry
 # RUN npm set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
-ENV BOT_TOKEN=6358212073:AAHBRle79uHuFbXYDNcL-2RTE97aSOLOMiI
-ENV CHAT_ID = -1001831838740
 
 WORKDIR /app
 

@@ -48,7 +48,7 @@ export class AppService {
     this.logger = new Logger(AppService.name);
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_5PM, {
+  @Cron(CronExpression.EVERY_MINUTE, {
     timeZone: 'Asia/Tehran',
   })
   async sendVeilaniPool(): Promise<void> {
