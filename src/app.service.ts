@@ -4,7 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Cache } from 'cache-manager';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { VoteOptions } from './constants/options.vote';
-import * as _ from 'lodash';
+import { GroupInformation } from './constants/group.info';
 @Injectable()
 export class AppService {
   private bot: TelegramBot;
@@ -48,14 +48,14 @@ export class AppService {
     this.logger = new Logger(AppService.name);
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_7PM, {
+  @Cron(CronExpression.EVERY_DAY_AT_5PM, {
     timeZone: 'Asia/Tehran',
   })
-  async sendVeilaniPool(): Promise<void> {
+  async SendVeilaniPool(): Promise<void> {
     Logger.log('Telegram Vote Sending ...');
     this.bot
       .sendPoll(
-        process.env.CHAT_ID,
+        GroupInformation.ChatId,
         'امشب ساعت چند کانتر ویلانی رو راه بندازیم؟',
         VoteOptions.map((x) => x.title),
         {
@@ -64,29 +64,36 @@ export class AppService {
           disable_notification: false,
         },
       )
-      .then(() => {
+      .then((res) => {
         // TODO: do this part
         // this.cacheManager.set('vote', res, 43200000); //12 hour cached !
         Logger.log('Telegram Vote Sent Successfully');
         // Logger.log('Telegram Vote Stored in MemoryCache');
+        // this.bot.pinChatMessage(GroupInformation.ChatId);
+        setTimeout(() => {
+          this.bot
+            .pinChatMessage(GroupInformation.ChatId, res.message_id, {
+              disable_notification: false,
+            })
+            .then(() => Logger.log('Pin Vote Successfully'))
+            .catch((err) => {
+              Logger.log(`Telegram Vote Error: ${err.message}`);
+            });
+        }, 1000);
       })
       .catch((err) => {
         Logger.log(`Telegram Vote Error: ${err.message}`);
       });
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_6PM, {
+  @Cron(CronExpression.EVERY_DAY_AT_4AM, {
     timeZone: 'Asia/Tehran',
   })
-  async sendVeilaniPool2(): Promise<void> {
-    const nDate = new Date().toLocaleString('en-US', {
-      timeZone: 'Asia/Tehran',
-    });
-    console.log(nDate);
+  async SendVeilaniPool_Test(): Promise<void> {
     Logger.log('Telegram Vote Sending ...');
     this.bot
       .sendPoll(
-        '-1001831838740',
+        GroupInformation.TestChatId,
         'امشب ساعت چند کانتر ویلانی رو راه بندازیم؟',
         VoteOptions.map((x) => x.title),
         {
@@ -95,11 +102,21 @@ export class AppService {
           disable_notification: false,
         },
       )
-      .then(() => {
+      .then((res) => {
         // TODO: do this part
         // this.cacheManager.set('vote', res, 43200000); //12 hour cached !
         Logger.log('Telegram Vote Sent Successfully');
         // Logger.log('Telegram Vote Stored in MemoryCache');
+        setTimeout(() => {
+          this.bot
+            .pinChatMessage(GroupInformation.TestChatId, res.message_id, {
+              disable_notification: false,
+            })
+            .then(() => Logger.log('Pin Vote Successfully'))
+            .catch((err) => {
+              Logger.log(`Telegram Vote Error: ${err.message}`);
+            });
+        }, 1000);
       })
       .catch((err) => {
         Logger.log(`Telegram Vote Error: ${err.message}`);
