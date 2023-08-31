@@ -3,6 +3,7 @@ services:
     veilanibot:
         container_name: nestjs_veilani_bot
         image: veilanibot
+        network_mode: "host"
         build:
             context: .
         restart: unless-stopped
