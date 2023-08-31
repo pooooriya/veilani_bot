@@ -5,12 +5,55 @@ import { Cache } from 'cache-manager';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { VoteOptions } from './constants/options.vote';
 import { GroupInformation } from './constants/group.info';
+import * as Gamedig from 'gamedig';
+import { createReadStream } from 'fs';
+
 @Injectable()
 export class AppService {
   private bot: TelegramBot;
   private logger: Logger;
   constructor(@Inject(CACHE_MANAGER) private cacheManager: Cache) {
     this.bot = new TelegramBot(GroupInformation.BotToken, { polling: true });
+    this.bot.onText(/جکس/, (msg) => {
+      const { message_id } = msg;
+      this.bot.sendVoice(
+        GroupInformation.ChatId,
+        createReadStream('./src/assets/jaxprompt.ogg'),
+        {
+          reply_to_message_id: message_id,
+        },
+      );
+    });
+
+    this.bot.onText(/\/state/, async () => {
+      try {
+        const serverData = await Gamedig.query({
+          type: 'csgo',
+          host: '185.141.104.39',
+          port: '30364',
+        });
+        this.bot.sendMessage(
+          GroupInformation.ChatId,
+          `وضعیت سرور ویلانی در حال حاضر \n نام سرور :${
+            serverData.name
+          }\n  مپ در حال بازی : ${
+            serverData.map
+          } \n تعداد کاربران حاضر در سرور:${
+            serverData.raw.numplayers
+          } \n افرادی که داخل سرور هستند : \n${serverData.players
+            .map((item) => `${item.name}`)
+            .filter((x) => x !== 'MaxGaming.ir-GOTV') // remove gotv
+            .join('\n')}
+         `,
+        );
+      } catch (error) {
+        this.bot.sendMessage(
+          GroupInformation.ChatId,
+          'متاسفانه نتونستم به سرور های استیم وصل شم ! ',
+        );
+      }
+    });
+
     // TODO: this part
     // this.bot.on('poll_answer', async (msg) => {
     //   const vote = (await this.cacheManager.get('vote')) as any;
@@ -47,6 +90,17 @@ export class AppService {
     // });
     this.logger = new Logger(AppService.name);
   }
+
+  // @Cron(CronExpression.EVERY_5_SECONDS)
+  // async getPlayersCsgo() {
+  //   const serverData = await Gamedig.query({
+  //     type: 'csgo',
+  //     host: '185.141.104.39',
+  //     port: '30364',
+  //   });
+
+  //   console.log(serverData.players.map((item) => item));
+  // }
 
   @Cron(CronExpression.EVERY_DAY_AT_5PM, {
     timeZone: 'Asia/Tehran',
