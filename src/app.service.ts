@@ -10,7 +10,7 @@ export class AppService {
   private bot: TelegramBot;
   private logger: Logger;
   constructor(@Inject(CACHE_MANAGER) private cacheManager: Cache) {
-    this.bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+    this.bot = new TelegramBot(GroupInformation.BotToken, { polling: true });
     // TODO: this part
     // this.bot.on('poll_answer', async (msg) => {
     //   const vote = (await this.cacheManager.get('vote')) as any;
