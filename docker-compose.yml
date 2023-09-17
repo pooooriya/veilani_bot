@@ -1,9 +1,11 @@
 version: '3.8'
 services:
-    veilanibot:
-        container_name: nestjs_veilani_bot
-        image: veilanibot
-        network_mode: "host"
-        build:
-            context: .
-        restart: unless-stopped
+  veilanibot:
+    container_name: nestjs_veilani_bot
+    image: veilanibot
+    network_mode: 'host'
+    environment:
+      NODE_ENV: production
+    build:
+      context: .
+    restart: unless-stopped
