@@ -5,7 +5,8 @@ services:
     image: veilanibot
     network_mode: 'host'
     environment:
-      - NODE_ENV=production
+      - BOT_TOKEN=6358212073:AAHBRle79uHuFbXYDNcL-2RTE97aSOLOMiI
+      - GROUP_CHAT_ID=-1001548411337
     build:
       context: .
     restart: unless-stopped
