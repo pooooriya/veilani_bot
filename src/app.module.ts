@@ -9,7 +9,7 @@ import { TelegramModule } from './providers/bot/node-telegram-bot-api/telegram/t
 @Module({
   imports: [
     ConfigModule.forRoot({
-      envFilePath: `${process.cwd()}/src/config/env/${process.env.NODE_ENV.trim()}.env`,
+      envFilePath: `${process.cwd()}/src/config/env/production.env`,
       load: [configuration],
       isGlobal: true,
     }),
