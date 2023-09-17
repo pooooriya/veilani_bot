@@ -5,7 +5,7 @@ services:
     image: veilanibot
     network_mode: 'host'
     environment:
-      NODE_ENV: production
+      - NODE_ENV=production
     build:
       context: .
     restart: unless-stopped
