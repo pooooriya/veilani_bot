@@ -1,6 +1,6 @@
-import { SendVoteRequestDto } from '../../dtos/send-vote.dto';
+import TelegramBot from 'node-telegram-bot-api';
 
 export interface ITelegramService {
-  SendVote: (request: SendVoteRequestDto) => void;
-  PinMessage: () => void;
+  SendVote: () => Promise<TelegramBot.Message>;
+  PinVote: (voteId: number) => Promise<boolean>;
 }
