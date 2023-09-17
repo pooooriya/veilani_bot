@@ -45,6 +45,5 @@ COPY --from=development /app/dist/ ./dist/
 # Expose application port
 EXPOSE 3000
 
-ENV NODE_ENV=production
 # Start application
 CMD [ "node", "dist/main.js" ]
