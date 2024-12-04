@@ -20,11 +20,12 @@ export class TelegramService implements ITelegramService {
 
   private handleServerCommand = async (message: TelegramBot.Message) => {
     try {
-      const serverDetails = '```connect 5.57.32.32:28441;password veilani```';
+      const serverDetails = 'connect 5.57.32.32:28441;password veilani';
 
       this.bot.sendMessage(
         message.chat.id,
-        serverDetails,
+        `\`\`\`${serverDetails}\`\`\``,
+        { parse_mode: 'MarkdownV2' }
       );
     } catch (error) {
       this.logger.error('Server command failed ====>', error);
