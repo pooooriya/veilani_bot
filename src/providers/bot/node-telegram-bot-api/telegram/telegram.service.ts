@@ -24,7 +24,7 @@ export class TelegramService implements ITelegramService {
 
       this.bot.sendMessage(
         message.chat.id,
-        `\`\`\`${serverDetails}\`\`\``,
+        `\`${serverDetails}\``,
         { parse_mode: 'MarkdownV2' }
       );
     } catch (error) {
