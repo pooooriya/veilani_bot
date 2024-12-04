@@ -15,69 +15,25 @@ export class TelegramService implements ITelegramService {
       polling: true,
     });
 
-    // this.bot.onText(/\/server/, this.handleServerCommand);
+    this.bot.onText(/\/server/, this.handleServerCommand);
   }
 
-  // private handleServerCommand = async (message: TelegramBot.Message) => {
-  //   try {
-  //     const server = await Server({
-  //       ip: '185.141.133.16',
-  //       port: 30378,
-  //       timeout: 20000,
-  //     });
-  //     const info = await server.getInfo();
-  //     console.log(info);
-
-  //     const players = await server.getPlayers();
-  //     console.log(players);
-
-  //     const rules = await server.getRules();
-  //     console.log(rules);
-
-  //     const ping = server.lastPing;
-  //     console.log(ping);
-
-  //     // Gamedig.query({
-  //     //   type: 'csgo',
-  //     //   host: '185.141.133.16',
-  //     //   maxAttempts: 3,
-  //     //   socketTimeout: 20000,
-  //     //   givenPortOnly: true,
-  //     //   debug: true,
-  //     // })
-  //     //   .then((state) => {
-  //     //     console.log(state);
-  //     //   })
-  //     //   .catch((error) => {
-  //     //     console.log('Server is offline');
-  //     //     console.log(error);
-  //     //   });
-  //     // const serverData = await Gamedig.query({
-  //     //   type: 'csgo',
-  //     //   host: '185.141.133.16',
-  //     //   port: '30378',
-  //     // });
-  //     // this.bot.sendMessage(
-  //     //   message.chat.id,
-  //     //   `وضعیت سرور ویلانی در حال حاضر \n نام سرور :${
-  //     //     serverData.name
-  //     //   }\n  مپ در حال بازی : ${serverData.map} \n تعداد کاربران حاضر در سرور:${
-  //     //     serverData.raw.numplayers
-  //     //   } \n افرادی که داخل سرور هستند : \n${serverData.players
-  //     //     .map((item) => `${item.name}`)
-  //     //     .filter((x) => x !== 'MaxGaming.ir-GOTV') // remove gotv
-  //     //     .join('\n')}
-  //     //    `,
-  //     // );
-  //   } catch (error) {
-  //     console.log(error);
-
-  //     this.bot.sendMessage(
-  //       message.chat.id,
-  //       'متاسفانه نتونستم به سرور های استیم وصل شم ! ',
-  //     );
-  //   }
-  // };
+  private handleServerCommand = async (message: TelegramBot.Message) => {
+    try {
+      const serverDetails = 'connect 5.57.32.32:28441;password veilani';
+      
+      this.bot.sendMessage(
+        message.chat.id,
+        serverDetails,
+      );
+    } catch (error) {
+      this.logger.error('Server command failed ====>', error);
+      this.bot.sendMessage(
+        message.chat.id,
+        'Sorry, something went wrong!',
+      );
+    }
+  };
 
   SendVote = (): Promise<TelegramBot.Message> => {
     try {
