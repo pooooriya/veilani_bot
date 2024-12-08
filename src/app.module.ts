@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { AppService } from './app.service';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
-import { CacheModule } from '@nestjs/cache-manager';
-import { configuration } from './config/configuration';
+import { ScheduleModule } from '@nestjs/schedule';
+import { DatabaseModule } from './database/database.module';
 import { TelegramModule } from './providers/bot/node-telegram-bot-api/telegram/telegram.module';
+import { AppService } from './app.service';
+import { configuration } from './config/configuration';
 
 @Module({
   imports: [
@@ -13,7 +13,7 @@ import { TelegramModule } from './providers/bot/node-telegram-bot-api/telegram/t
       isGlobal: true,
     }),
     ScheduleModule.forRoot(),
-    CacheModule.register(),
+    DatabaseModule,
     TelegramModule,
   ],
   providers: [AppService],
