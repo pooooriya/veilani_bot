@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 
 export interface ITelegramService {
-  SendVote: () => Promise<TelegramBot.Message>;
-  PinVote: (voteId: number) => Promise<boolean>;
+  sendVote: () => Promise<TelegramBot.Message>;
+  pinVote: (voteId: number) => Promise<boolean>;
 }

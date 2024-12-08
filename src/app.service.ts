@@ -15,8 +15,8 @@ export class AppService {
   async sendDailyVote() {
     try {
       this.logger.log('Sending daily vote...');
-      const vote = await this.telegramService.SendVote();
-      await this.telegramService.PinVote(vote.message_id);
+      const vote = await this.telegramService.sendVote();
+      await this.telegramService.pinVote(vote.message_id);
 
       // ایجاد سشن جدید بازی
       await this.telegramService.createNewGameSession();
