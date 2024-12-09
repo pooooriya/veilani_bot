@@ -140,7 +140,7 @@ export class TelegramService implements ITelegramService {
       const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
-          `تعداد رای فعلی: ${this.votedUsers.size} نفر\n` +
+          `ت��داد رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
       await this.saveBotMessage(reminderMsg);
@@ -363,15 +363,17 @@ export class TelegramService implements ITelegramService {
       .map((uid) => `[@${uid}](tg://user?id=${uid})`)
       .join('\n');
 
-    const message = this.formatMessage(
+    const messageText = this.formatMessage(
       VoteMessages.progressUpdate,
       this.votedUsers.size - this.needsFollowUpUsers.size,
       this.threshold,
       activeVoters,
     );
 
-    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    await this.saveBotMessage(message);
+    const sentMessage = await this.bot.sendMessage(chatId, messageText, {
+      parse_mode: 'Markdown',
+    });
+    await this.saveBotMessage(sentMessage);
   }
 
   private handleServerCommand = async (message: TelegramBot.Message) => {
@@ -563,7 +565,7 @@ export class TelegramService implements ITelegramService {
     if (this.votedUsers.size < this.threshold) {
       await this.bot.sendMessage(
         this.configService.get<string>('GROUP_CHAT_ID'),
-        `تا ساعت 11 شب به حد نصاب ${this.threshold} ن��ر نرسیدیم، امشب بازی برگزار نمیشه.`,
+        `تا ساعت 11 شب به حد نصاب ${this.threshold} نفر نرسیدیم، امشب بازی برگزار نمیشه.`,
       );
     }
   }
