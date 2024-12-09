@@ -140,18 +140,17 @@ export class TelegramService implements ITelegramService {
       const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
-          `ت��د رای فعلی: ${this.votedUsers.size} نفر\n` +
+          `ت��داد رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
-      await this.saveBotMessage(reminderMsg);
+      this.botMessages.add(reminderMsg.message_id);
 
-      // فوروارد کردن نظرسنجی اصلی
       const forwardedMsg = await this.bot.forwardMessage(
         chatId,
         chatId,
         this.currentPollId,
       );
-      await this.saveBotMessage(forwardedMsg);
+      this.botMessages.add(forwardedMsg.message_id);
     } catch (error) {
       this.logger.error('Failed to resend poll', error);
     }
@@ -539,16 +538,7 @@ export class TelegramService implements ITelegramService {
         `${followUpMentions} لطفاً اعلام کنید که آیا امشب در بازی شرکت می‌کنید یا خیر؟`,
         { parse_mode: 'Markdown' },
       );
-      this.messageIds.push(message.message_id);
-    }
-
-    const activeVoters = this.getActiveVotersCount();
-    if (activeVoters === 0) {
-      const message = await this.bot.sendMessage(
-        chatId,
-        'هنوز کس�� برای بازی امشب اعلام آمادگی نکرده! لطفاً در نظرسنجی شرکت کنید.',
-      );
-      this.messageIds.push(message.message_id);
+      this.botMessages.add(message.message_id);
     }
   }
 
@@ -559,7 +549,7 @@ export class TelegramService implements ITelegramService {
         chatId,
         `هنوز به حد نصاب (${this.threshold} نفر) نرسیدیم! دوستان بجنبید تا بازی برگزار بشه.`,
       );
-      await this.saveBotMessage(message);
+      this.botMessages.add(message.message_id);
     }
   }
 
@@ -666,31 +656,19 @@ export class TelegramService implements ITelegramService {
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
       let deletedCount = 0;
 
-      this.logger.debug(
-        `Attempting to delete ${this.botMessages.size} messages`,
-      );
+      this.logger.log(`Attempting to delete ${this.botMessages.size} messages`);
 
       // پاک کردن همه پیام‌های بات به جز نظرسنجی
-      for (const messageId of this.botMessages) {
+      for (const messageId of Array.from(this.botMessages)) {
         try {
           if (messageId !== this.currentPollId) {
             await this.bot.deleteMessage(chatId, messageId);
             deletedCount++;
-            await new Promise((resolve) => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 50));
           }
         } catch (error) {
-          this.logger.debug(
-            `Failed to delete message ${messageId}: ${error.message}`,
-          );
-          continue;
+          this.logger.debug(`Failed to delete message ${messageId}`);
         }
-      }
-
-      // پاک کردن دستور
-      try {
-        await this.bot.deleteMessage(chatId, msg.message_id);
-      } catch (error) {
-        this.logger.debug(`Failed to delete command message: ${error.message}`);
       }
 
       // به روزرسانی لیست پیام‌ها
@@ -700,23 +678,27 @@ export class TelegramService implements ITelegramService {
         this.botMessages.clear();
       }
 
-      // ارسال پیام تایید
-      if (deletedCount > 0) {
-        const confirmMsg = await this.bot.sendMessage(
-          chatId,
-          `✅ ${deletedCount} پیام از بات پاک شد.`,
-        );
-
-        setTimeout(async () => {
-          try {
-            await this.bot.deleteMessage(chatId, confirmMsg.message_id);
-          } catch (error) {
-            this.logger.debug(
-              `Failed to delete confirmation message: ${error.message}`,
-            );
-          }
-        }, 3000);
+      // پاک کردن دستور
+      try {
+        await this.bot.deleteMessage(chatId, msg.message_id);
+      } catch (error) {
+        this.logger.debug('Failed to delete command message');
       }
+
+      // ارسال پیام تایید موقت
+      const confirmMsg = await this.bot.sendMessage(
+        chatId,
+        `✅ ${deletedCount} پیام از بات پاک شد.`,
+      );
+
+      // پاک کردن پیام تایید بعد از 3 ثانیه
+      setTimeout(async () => {
+        try {
+          await this.bot.deleteMessage(chatId, confirmMsg.message_id);
+        } catch (error) {
+          this.logger.debug('Failed to delete confirmation message');
+        }
+      }, 3000);
     } catch (error) {
       this.logger.error('Failed to clear messages:', error);
     }
