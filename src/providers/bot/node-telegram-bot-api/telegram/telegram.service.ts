@@ -140,7 +140,7 @@ export class TelegramService implements ITelegramService {
       const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
-          `تاد رای فعلی: ${this.votedUsers.size} نفر\n` +
+          `ت��د رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
       await this.saveBotMessage(reminderMsg);
@@ -546,18 +546,20 @@ export class TelegramService implements ITelegramService {
     if (activeVoters === 0) {
       const message = await this.bot.sendMessage(
         chatId,
-        'هنوز کسی برای بازی امشب اعلام آمادگی نکرده! لطفاً در نظرسنجی شرکت کنید.',
+        'هنوز کس�� برای بازی امشب اعلام آمادگی نکرده! لطفاً در نظرسنجی شرکت کنید.',
       );
       this.messageIds.push(message.message_id);
     }
   }
 
   async reminderCheck() {
+    const chatId = this.configService.get<string>('GROUP_CHAT_ID');
     if (this.votedUsers.size < this.threshold) {
-      await this.bot.sendMessage(
-        this.configService.get<string>('GROUP_CHAT_ID'),
+      const message = await this.bot.sendMessage(
+        chatId,
         `هنوز به حد نصاب (${this.threshold} نفر) نرسیدیم! دوستان بجنبید تا بازی برگزار بشه.`,
       );
+      await this.saveBotMessage(message);
     }
   }
 
@@ -659,25 +661,27 @@ export class TelegramService implements ITelegramService {
 
   private handleClearMessages = async (msg: TelegramBot.Message) => {
     try {
-      if (msg.from.id !== AdminConfig.ADMIN_ID) {
-        return;
-      }
+      if (msg.from.id !== AdminConfig.ADMIN_ID) return;
 
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
       let deletedCount = 0;
 
-      // پاک کردن همه پیام‌های ��ات به جز نظرسنجی
+      this.logger.debug(
+        `Attempting to delete ${this.botMessages.size} messages`,
+      );
+
+      // پاک کردن همه پیام‌های بات به جز نظرسنجی
       for (const messageId of this.botMessages) {
         try {
-          // نظرسنجی فعلی را پاک نکن
           if (messageId !== this.currentPollId) {
             await this.bot.deleteMessage(chatId, messageId);
             deletedCount++;
-            // کم کردن تاخر برای جلوگیری از محدودیت تلگرام
             await new Promise((resolve) => setTimeout(resolve, 20));
           }
         } catch (error) {
-          // اگر پیام قبلاً پاک شده، ادامه بده
+          this.logger.debug(
+            `Failed to delete message ${messageId}: ${error.message}`,
+          );
           continue;
         }
       }
@@ -686,17 +690,17 @@ export class TelegramService implements ITelegramService {
       try {
         await this.bot.deleteMessage(chatId, msg.message_id);
       } catch (error) {
-        // اگر نتونست دستور رو پاک کنه، اهمیتی نده
+        this.logger.debug(`Failed to delete command message: ${error.message}`);
       }
 
-      // به روزرسانی لیست پیام‌ها - فقط نظرسنجی را نگه دار
+      // به روزرسانی لیست پیام‌ها
       if (this.currentPollId) {
         this.botMessages = new Set([this.currentPollId]);
       } else {
         this.botMessages.clear();
       }
 
-      // ارسال پیام تایید و حذف آن بعد از 3 ثانیه
+      // ارسال پیام تایید
       if (deletedCount > 0) {
         const confirmMsg = await this.bot.sendMessage(
           chatId,
@@ -706,8 +710,10 @@ export class TelegramService implements ITelegramService {
         setTimeout(async () => {
           try {
             await this.bot.deleteMessage(chatId, confirmMsg.message_id);
-          } catch {
-            // اگر نتونست پیام تایید رو پاک کنه، اهمیتی نده
+          } catch (error) {
+            this.logger.debug(
+              `Failed to delete confirmation message: ${error.message}`,
+            );
           }
         }, 3000);
       }
@@ -876,6 +882,7 @@ export class TelegramService implements ITelegramService {
   private async saveBotMessage(message: TelegramBot.Message) {
     if (message && message.message_id) {
       this.botMessages.add(message.message_id);
+      this.logger.debug(`Saved bot message: ${message.message_id}`);
     }
   }
 
@@ -904,7 +911,7 @@ export class TelegramService implements ITelegramService {
         }
       }
 
-      // شبیه‌سازی برداشتن را��
+      // شبیه‌سازی برداشتن رای
       await this.simulateVoteRetraction();
 
       // شبیه‌سازی تغییر رای از "بعداً اطلاع میدم" به یک ساعت
