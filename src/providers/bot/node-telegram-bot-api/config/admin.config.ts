@@ -1,22 +1,22 @@
 export const AdminConfig = {
   ADMIN_ID: 1270569260,
   COMMANDS: {
-    CLEAR_MESSAGES: '/clear_messages',
     ADMIN_PANEL: '/admin',
     NEW_VOTE: '/new_vote',
-    TEST_REMINDER: '/test_reminder',
-    TEST_FOLLOWUP: '/test_followup',
-    TEST_FINAL: '/test_final',
-    RESET_DATA: '/reset_data',
-    GET_STATS: '/get_stats',
+    CLEAR_MESSAGES: '/clear_messages',
+    SIMULATE_GAME: '/simulate',
+    TEST_ALL: '/test_all',
   },
   BUTTONS: {
     NEW_VOTE: '🗳 نظرسنجی جدید',
+    RESET_DATA: '🗑 پاک کردن داده‌ها',
     TEST_REMINDER: '⏰ تست یادآوری',
     TEST_FOLLOWUP: '📢 تست پیگیری',
     TEST_FINAL: '🔚 تست پایان',
-    RESET_DATA: '🗑 پاک کردن داده‌ها',
     GET_STATS: '📊 آمار کلی',
     CLEAR_MESSAGES: '🧹 پاکسازی پیام‌ها',
+    SIMULATE_GAME: '🎮 شبیه‌سازی بازی',
+    TEST_ALL: '🔄 تست همه قابلیت‌ها',
+    CLOSE_MENU: '❌ بستن منو',
   },
 };

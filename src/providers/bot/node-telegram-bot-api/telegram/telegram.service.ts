@@ -140,7 +140,7 @@ export class TelegramService implements ITelegramService {
       const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
-          `تعداد رای فعلی: ${this.votedUsers.size} نفر\n` +
+          `تاد رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
       await this.saveBotMessage(reminderMsg);
@@ -175,7 +175,7 @@ export class TelegramService implements ITelegramService {
       } else {
         await this.bot.sendMessage(
           msg.chat.id,
-          'شما هنوز در هیچ نظرسنجی شرکت نکرده‌اید!',
+          'شما هنوز در هیچ نظرسنجی شرکت نکرده‌اد!',
         );
       }
     } catch (error) {
@@ -440,7 +440,7 @@ export class TelegramService implements ITelegramService {
       } else {
         await this.bot.sendMessage(
           chatId,
-          `😔 متاسفانه امشب به حد نصاب ${this.threshold} نفر نرسیدیم. فردا دوباره تلاش می‌کنیم!`,
+          `😔 متاسفانه امشب به حد نصاب ${this.threshold} نفر نرسیدیم. فدا دوباره تلاش می‌کنیم!`,
         );
       }
 
@@ -664,21 +664,21 @@ export class TelegramService implements ITelegramService {
       }
 
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+      let deletedCount = 0;
 
-      // پاک کردن همه پیام‌های بات به جز نظرسنجی
+      // پاک کردن همه پیام‌های ��ات به جز نظرسنجی
       for (const messageId of this.botMessages) {
         try {
           // نظرسنجی فعلی را پاک نکن
           if (messageId !== this.currentPollId) {
             await this.bot.deleteMessage(chatId, messageId);
-            // کم کردن تاخیر برای جلوگیری از محدودیت تلگرام
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            deletedCount++;
+            // کم کردن تاخر برای جلوگیری از محدودیت تلگرام
+            await new Promise((resolve) => setTimeout(resolve, 20));
           }
         } catch (error) {
-          // اگر پیام قبلاً پاک شده باشد یا قابل پاک کردن نباشد، خطا را نادیده بگیر
-          if (error.response?.statusCode !== 400) {
-            this.logger.warn(`Failed to delete message ${messageId}:`, error);
-          }
+          // اگر پیام قبلاً پاک شده، ادامه بده
+          continue;
         }
       }
 
@@ -686,29 +686,31 @@ export class TelegramService implements ITelegramService {
       try {
         await this.bot.deleteMessage(chatId, msg.message_id);
       } catch (error) {
-        this.logger.warn('Failed to delete command message:', error);
+        // اگر نتونست دستور رو پاک کنه، اهمیتی نده
       }
 
-      // به روزرسانی لیست پیام‌ها - فقط ن��رسنجی را نگه دار
+      // به روزرسانی لیست پیام‌ها - فقط نظرسنجی را نگه دار
       if (this.currentPollId) {
         this.botMessages = new Set([this.currentPollId]);
       } else {
         this.botMessages.clear();
       }
 
-      // ارسال پیام تایید و حذف آن بعد از چند ثانیه
-      const confirmMsg = await this.bot.sendMessage(
-        chatId,
-        '✅ همه پیام‌های بات به جز نظرسنجی پاک شدند.',
-      );
+      // ارسال پیام تایید و حذف آن بعد از 3 ثانیه
+      if (deletedCount > 0) {
+        const confirmMsg = await this.bot.sendMessage(
+          chatId,
+          `✅ ${deletedCount} پیام از بات پاک شد.`,
+        );
 
-      setTimeout(async () => {
-        try {
-          await this.bot.deleteMessage(chatId, confirmMsg.message_id);
-        } catch (error) {
-          this.logger.warn('Failed to delete confirmation message:', error);
-        }
-      }, 3000);
+        setTimeout(async () => {
+          try {
+            await this.bot.deleteMessage(chatId, confirmMsg.message_id);
+          } catch {
+            // اگر نتونست پیام تایید رو پاک کنه، اهمیتی نده
+          }
+        }, 3000);
+      }
     } catch (error) {
       this.logger.error('Failed to clear messages:', error);
     }
@@ -756,8 +758,24 @@ export class TelegramService implements ITelegramService {
               ],
               [
                 {
+                  text: AdminConfig.BUTTONS.SIMULATE_GAME,
+                  callback_data: 'simulate_game',
+                },
+                {
+                  text: AdminConfig.BUTTONS.TEST_ALL,
+                  callback_data: 'test_all',
+                },
+              ],
+              [
+                {
                   text: AdminConfig.BUTTONS.CLEAR_MESSAGES,
                   callback_data: 'clear_messages',
+                },
+              ],
+              [
+                {
+                  text: AdminConfig.BUTTONS.CLOSE_MENU,
+                  callback_data: 'close_menu',
                 },
               ],
             ],
@@ -811,6 +829,18 @@ export class TelegramService implements ITelegramService {
           );
           break;
 
+        case 'simulate_game':
+          await this.simulateGame(chatId);
+          break;
+
+        case 'test_all':
+          await this.runAllTests(chatId);
+          break;
+
+        case 'close_menu':
+          await this.bot.deleteMessage(chatId, query.message.message_id);
+          break;
+
         case 'clear_messages':
           await this.handleClearMessages(query.message);
           await this.bot.answerCallbackQuery(query.id, {
@@ -846,6 +876,129 @@ export class TelegramService implements ITelegramService {
   private async saveBotMessage(message: TelegramBot.Message) {
     if (message && message.message_id) {
       this.botMessages.add(message.message_id);
+    }
+  }
+
+  private async simulateGame(chatId: string) {
+    try {
+      await this.bot.sendMessage(chatId, '🎮 شروع شبیه‌سازی بازی...');
+
+      // ایجاد نظرسنجی جدید
+      await this.resetVoteData();
+      const vote = await this.sendVote();
+      await this.pinVote(vote.message_id);
+
+      // شبیه‌سازی رای‌ها
+      const simulatedVotes = [
+        { option: 0, count: 4 }, // 22:00
+        { option: 1, count: 3 }, // 22:30
+        { option: 2, count: 2 }, // 23:00
+        { option: 3, count: 2 }, // بعداً اطلاع میدم
+        { option: 4, count: 1 }, // نمیتونم بیام
+      ];
+
+      for (const vote of simulatedVotes) {
+        for (let i = 0; i < vote.count; i++) {
+          await this.simulateVote(vote.option);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      // شبیه‌سازی برداشتن را��
+      await this.simulateVoteRetraction();
+
+      // شبیه‌سازی تغییر رای از "بعداً اطلاع میدم" به یک ساعت
+      await this.simulateFollowUpDecision();
+
+      await this.bot.sendMessage(chatId, '✅ شبیه‌سازی با موفقیت انجام شد.');
+    } catch (error) {
+      this.logger.error('Failed to simulate game', error);
+    }
+  }
+
+  private async runAllTests(chatId: string) {
+    try {
+      await this.bot.sendMessage(chatId, '🔄 شروع تست تمام قابلیت‌ها...');
+
+      const tests = [
+        { name: 'ایجاد نظرسنجی', fn: async () => await this.sendVote() },
+        {
+          name: 'پین کردن نظرسنجی',
+          fn: async () => await this.pinVote(this.currentPollId),
+        },
+        { name: 'رای دادن', fn: async () => await this.simulateVote(0) },
+        {
+          name: 'برداشتن رای',
+          fn: async () => await this.simulateVoteRetraction(),
+        },
+        { name: 'یادآوری', fn: async () => await this.reminderCheck() },
+        { name: 'پیگیری', fn: async () => await this.checkFollowUps() },
+        { name: 'بررسی نهایی', fn: async () => await this.finalCheck() },
+        {
+          name: 'آمار',
+          fn: async () => await this.databaseService.getGameStats(),
+        },
+        {
+          name: 'پاکسازی پیام‌ها',
+          fn: async () =>
+            await this.handleClearMessages({
+              from: { id: AdminConfig.ADMIN_ID },
+            } as TelegramBot.Message),
+        },
+      ];
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          await this.bot.sendMessage(chatId, `✅ تست ${test.name} موفق`);
+        } catch (error) {
+          await this.bot.sendMessage(
+            chatId,
+            `❌ تست ${test.name} ناموفق: ${error.message}`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      await this.bot.sendMessage(chatId, '🏁 تست‌ها به پایان رسید.');
+    } catch (error) {
+      this.logger.error('Failed to run all tests', error);
+    }
+  }
+
+  private async simulateVote(option: number) {
+    const fakeUser: TelegramBot.User = {
+      id: Math.floor(Math.random() * 1000000),
+      first_name: `Test User ${Math.floor(Math.random() * 100)}`,
+      is_bot: false,
+    };
+
+    await this.handlePollAnswer({
+      user: fakeUser,
+      option_ids: [option],
+      poll_id: 'test',
+    } as TelegramBot.PollAnswer);
+  }
+
+  private async simulateVoteRetraction() {
+    if (this.votedUsers.size > 0) {
+      const userId = Array.from(this.votedUsers)[0];
+      await this.handlePollAnswer({
+        user: { id: userId, first_name: 'Test User', is_bot: false },
+        option_ids: [],
+        poll_id: 'test',
+      } as TelegramBot.PollAnswer);
+    }
+  }
+
+  private async simulateFollowUpDecision() {
+    if (this.needsFollowUpUsers.size > 0) {
+      const userId = Array.from(this.needsFollowUpUsers)[0];
+      await this.handlePollAnswer({
+        user: { id: userId, first_name: 'Test User', is_bot: false },
+        option_ids: [0], // تغییر به ساعت 22:00
+        poll_id: 'test',
+      } as TelegramBot.PollAnswer);
     }
   }
 }
