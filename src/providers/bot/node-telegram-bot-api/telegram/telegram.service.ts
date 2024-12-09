@@ -239,8 +239,8 @@ export class TelegramService implements ITelegramService {
           this.retractedUsers.add(userId);
           this.userVotes.delete(userId);
 
-          // اگر قبلاً در حالت انتظار بود
-          const message = this.getRandomMessage(VoteMessages.voteRemoved);
+          // فقط پیام خنثی برای برداشتن رای
+          const message = this.getRandomMessage(VoteMessages.voteRetracted);
           const sentMessage = await this.bot.sendMessage(
             chatId,
             this.formatMessage(message, this.getMention(pollAnswer.user)),
@@ -563,7 +563,7 @@ export class TelegramService implements ITelegramService {
     if (this.votedUsers.size < this.threshold) {
       await this.bot.sendMessage(
         this.configService.get<string>('GROUP_CHAT_ID'),
-        `تا ساعت 11 شب به حد نصاب ${this.threshold} نفر نرسیدیم، امشب بازی برگزار نمیشه.`,
+        `تا ساعت 11 شب به حد نصاب ${this.threshold} ن��ر نرسیدیم، امشب بازی برگزار نمیشه.`,
       );
     }
   }
