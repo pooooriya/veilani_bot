@@ -9,7 +9,7 @@ export class AppService {
   constructor(private readonly telegramService: TelegramService) {}
 
   // ارسال نظرسنجی روزانه ساعت 6 عصر
-  @Cron('0 0 18 * * *', {
+  @Cron('0 40 18 * * *', {
     timeZone: 'Asia/Tehran',
   })
   async sendDailyVote() {
