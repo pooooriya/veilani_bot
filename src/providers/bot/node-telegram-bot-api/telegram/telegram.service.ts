@@ -177,7 +177,7 @@ export class TelegramService implements ITelegramService {
   private handleTopPlayersCommand = async (msg: TelegramBot.Message) => {
     try {
       const topPlayers = await this.databaseService.getTopPlayers();
-      let message = '🏆 برترین بازیکنان ویلانی:\n\n';
+      let message = '🏆 بر��رین بازیکنان ویلانی:\n\n';
 
       topPlayers.forEach((player, index) => {
         message +=
@@ -215,16 +215,29 @@ export class TelegramService implements ITelegramService {
     ) {
       return;
     }
+
     try {
       const userId = pollAnswer.user.id;
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+      const wasVoted = this.votedUsers.has(userId);
+      const wasPending = this.needsFollowUpUsers.has(userId);
 
       if (pollAnswer.option_ids.length === 0) {
-        if (this.votedUsers.has(userId)) {
+        // برداشتن رای
+        if (wasVoted) {
           this.votedUsers.delete(userId);
           this.needsFollowUpUsers.delete(userId);
           this.retractedUsers.add(userId);
           this.userVotes.delete(userId);
+
+          // اگر قبلاً در حالت انتظار بود
+          const message = this.getRandomMessage(VoteMessages.voteRemoved);
+          const sentMessage = await this.bot.sendMessage(
+            chatId,
+            this.formatMessage(message, this.getMention(pollAnswer.user)),
+            { parse_mode: 'Markdown' },
+          );
+          this.messageIds.push(sentMessage.message_id);
 
           await this.databaseService.updateUserStats(
             {
@@ -234,28 +247,80 @@ export class TelegramService implements ITelegramService {
             },
             false,
           );
-
-          const message = this.getRandomMessage(VoteMessages.voteRetracted);
-          const sentMessage = await this.bot.sendMessage(
-            chatId,
-            this.formatMessage(message, this.getMention(pollAnswer.user)),
-            { parse_mode: 'Markdown' },
-          );
-          this.messageIds.push(sentMessage.message_id);
         }
       } else {
-        if (!this.votedUsers.has(userId) && pollAnswer.option_ids[0] < 3) {
-          this.votedUsers.add(userId);
-          this.userVotes.set(userId, pollAnswer.option_ids[0]);
+        const selectedOption = pollAnswer.option_ids[0];
 
-          await this.databaseService.updateUserStats(
-            {
-              id: userId,
-              username: pollAnswer.user.username,
-              first_name: pollAnswer.user.first_name,
-            },
-            true,
-          );
+        if (!wasVoted) {
+          this.votedUsers.add(userId);
+
+          if (selectedOption === 3) {
+            // حالت "بعداً اطلاع میدم"
+            this.needsFollowUpUsers.add(userId);
+            const message = this.getRandomMessage(VoteMessages.pendingDecision);
+            const sentMessage = await this.bot.sendMessage(
+              chatId,
+              this.formatMessage(message, this.getMention(pollAnswer.user)),
+              { parse_mode: 'Markdown' },
+            );
+            this.messageIds.push(sentMessage.message_id);
+          } else if (selectedOption === 4) {
+            // حالت "نمیتونم بیام"
+            const message = this.getRandomMessage(VoteMessages.voteRemoved);
+            const sentMessage = await this.bot.sendMessage(
+              chatId,
+              this.formatMessage(message, this.getMention(pollAnswer.user)),
+              { parse_mode: 'Markdown' },
+            );
+            this.messageIds.push(sentMessage.message_id);
+          } else {
+            // رای به یکی از ساعت‌ها
+            this.userVotes.set(userId, selectedOption);
+            const message = this.getRandomMessage(VoteMessages.voteSubmitted);
+            const sentMessage = await this.bot.sendMessage(
+              chatId,
+              this.formatMessage(message, this.getMention(pollAnswer.user)),
+              { parse_mode: 'Markdown' },
+            );
+            this.messageIds.push(sentMessage.message_id);
+
+            // آپدیت دیتابیس
+            await this.databaseService.updateUserStats(
+              {
+                id: userId,
+                username: pollAnswer.user.username,
+                first_name: pollAnswer.user.first_name,
+              },
+              true,
+            );
+
+            // چک کردن حد نصاب
+            const activeVoters = this.getActiveVotersCount();
+            if (activeVoters >= this.threshold) {
+              const gameTime = this.determineGameTime();
+              const confirmMessage = await this.bot.sendMessage(
+                chatId,
+                this.formatMessage(VoteMessages.gameConfirmed, gameTime),
+                { parse_mode: 'Markdown' },
+              );
+              this.messageIds.push(confirmMessage.message_id);
+
+              if (this.currentGameSession) {
+                await this.databaseService.updateGameSession(
+                  this.currentGameSession,
+                  {
+                    start_time: gameTime,
+                    player_count: activeVoters,
+                    status: 'confirmed',
+                  },
+                );
+              }
+            }
+          }
+        } else if (wasPending && selectedOption < 3) {
+          // تغییر از حالت انتظار به رای مثبت
+          this.needsFollowUpUsers.delete(userId);
+          this.userVotes.set(userId, selectedOption);
 
           const message = this.getRandomMessage(VoteMessages.voteSubmitted);
           const sentMessage = await this.bot.sendMessage(
@@ -264,34 +329,6 @@ export class TelegramService implements ITelegramService {
             { parse_mode: 'Markdown' },
           );
           this.messageIds.push(sentMessage.message_id);
-
-          const activeVoters = this.getActiveVotersCount();
-          if (activeVoters >= this.threshold) {
-            const gameTime = this.determineGameTime();
-            const confirmMessage = await this.bot.sendMessage(
-              chatId,
-              this.formatMessage(VoteMessages.gameConfirmed, gameTime),
-              { parse_mode: 'Markdown' },
-            );
-            this.messageIds.push(confirmMessage.message_id);
-
-            if (this.currentGameSession) {
-              await this.databaseService.updateGameSession(
-                this.currentGameSession,
-                {
-                  start_time: gameTime,
-                  player_count: activeVoters,
-                  status: 'confirmed',
-                },
-              );
-            }
-          }
-        } else if (
-          !this.votedUsers.has(userId) &&
-          pollAnswer.option_ids[0] === 3
-        ) {
-          this.votedUsers.add(userId);
-          this.needsFollowUpUsers.add(userId);
         }
       }
     } catch (error) {
@@ -537,7 +574,7 @@ export class TelegramService implements ITelegramService {
     try {
       await this.bot.sendMessage(
         this.configService.get<string>('GROUP_CHAT_ID'),
-        'متأسفانه مشکلی پیش آمده است. لطفاً دوباره تلاش کنید.',
+        'متأسف��نه مشکلی پیش آمده است. لطفاً دوباره تلاش کنید.',
       );
     } catch (e) {
       this.logger.error('Failed to send error message:', e);
