@@ -6,6 +6,7 @@ import { VoteConfig } from '../config/vote.config';
 import { VoteMessages } from '../config/messages.config';
 import { DatabaseService } from 'src/database/database.service';
 import { AdminConfig } from '../config/admin.config';
+import { CommandsConfig } from '../config/commands.config';
 
 @Injectable()
 export class TelegramService implements ITelegramService {
@@ -51,7 +52,70 @@ export class TelegramService implements ITelegramService {
       this.handleNewVote,
     );
     this.bot.on('callback_query', this.handleCallbackQuery);
+    this.bot.onText(/\/help/, this.handleHelp);
+    this.bot.onText(/\/start/, this.handleStart);
+
+    // تنظیم کامندها برای BotFather
+    this.setupBotCommands();
   }
+
+  private async setupBotCommands() {
+    try {
+      // تنظیم کامندهای عمومی برای همه گروه‌ها
+      await this.bot.setMyCommands(CommandsConfig.PUBLIC_COMMANDS);
+
+      // تنظیم کامندهای ادمین فقط برای ادمین
+      const adminCommands = [
+        ...CommandsConfig.PUBLIC_COMMANDS,
+        ...CommandsConfig.ADMIN_COMMANDS,
+      ];
+      await this.bot.setMyCommands(adminCommands, {
+        scope: {
+          type: 'chat',
+          chat_id: AdminConfig.ADMIN_ID,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to setup bot commands', error);
+    }
+  }
+
+  private handleHelp = async (msg: TelegramBot.Message) => {
+    try {
+      let helpText = '🤖 راهنمای دستورات بات:\n\n';
+
+      // دستورات عمومی
+      helpText += '📌 دستورات عمومی:\n';
+      CommandsConfig.PUBLIC_COMMANDS.forEach((cmd) => {
+        helpText += `/${cmd.command} - ${cmd.description}\n`;
+      });
+
+      // اگر پیام از ادمین است، دستورات ادمین را هم نمایش بده
+      if (msg.from.id === AdminConfig.ADMIN_ID) {
+        helpText += '\n👑 دستورات ادمین:\n';
+        CommandsConfig.ADMIN_COMMANDS.forEach((cmd) => {
+          helpText += `/${cmd.command} - ${cmd.description}\n`;
+        });
+      }
+
+      await this.bot.sendMessage(msg.chat.id, helpText);
+    } catch (error) {
+      this.logger.error('Failed to send help message', error);
+    }
+  };
+
+  private handleStart = async (msg: TelegramBot.Message) => {
+    try {
+      const welcomeText =
+        '👋 سلام! من بات ویلانی هستم\n\n' +
+        'من به شما کمک می‌کنم تا راحت‌تر برای بازی برنامه‌ریزی کنید.\n\n' +
+        'برای دیدن لیست دستورات، از /help استفاده کنید.';
+
+      await this.bot.sendMessage(msg.chat.id, welcomeText);
+    } catch (error) {
+      this.logger.error('Failed to send welcome message', error);
+    }
+  };
 
   private handleMessage = async (msg: TelegramBot.Message) => {
     if (
