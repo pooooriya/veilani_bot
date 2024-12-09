@@ -21,6 +21,7 @@ export class TelegramService implements ITelegramService {
   public bot: TelegramBot;
   private userVotes: Map<number, number> = new Map();
   private messageIds: number[] = [];
+  private botMessages: Set<number> = new Set();
 
   constructor(
     private readonly configService: ConfigService,
@@ -121,12 +122,14 @@ export class TelegramService implements ITelegramService {
     if (
       msg.chat.id.toString() === this.configService.get<string>('GROUP_CHAT_ID')
     ) {
-      this.messagesSinceLastPoll++;
+      if (!msg.from.is_bot) {
+        this.messagesSinceLastPoll++;
 
-      // هر 20 پیام، نظرسنجی رو دوباره ارسال می‌کنیم
-      if (this.messagesSinceLastPoll >= 20 && this.currentPollId) {
-        this.messagesSinceLastPoll = 0;
-        await this.resendPoll();
+        // هر 20 پیام، نظرسنجی رو دوباره ارسال می‌کنیم
+        if (this.messagesSinceLastPoll >= 20 && this.currentPollId) {
+          this.messagesSinceLastPoll = 0;
+          await this.resendPoll();
+        }
       }
     }
   };
@@ -134,15 +137,21 @@ export class TelegramService implements ITelegramService {
   private async resendPoll() {
     try {
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
-      await this.bot.sendMessage(
+      const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
           `تعداد رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
+      await this.saveBotMessage(reminderMsg);
 
       // فوروارد کردن نظرسنجی اصلی
-      await this.bot.forwardMessage(chatId, chatId, this.currentPollId);
+      const forwardedMsg = await this.bot.forwardMessage(
+        chatId,
+        chatId,
+        this.currentPollId,
+      );
+      await this.saveBotMessage(forwardedMsg);
     } catch (error) {
       this.logger.error('Failed to resend poll', error);
     }
@@ -177,7 +186,7 @@ export class TelegramService implements ITelegramService {
   private handleTopPlayersCommand = async (msg: TelegramBot.Message) => {
     try {
       const topPlayers = await this.databaseService.getTopPlayers();
-      let message = '🏆 بر��رین بازیکنان ویلانی:\n\n';
+      let message = '🏆 بررین بازیکنان ویلانی:\n\n';
 
       topPlayers.forEach((player, index) => {
         message +=
@@ -362,6 +371,7 @@ export class TelegramService implements ITelegramService {
     );
 
     await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    await this.saveBotMessage(message);
   }
 
   private handleServerCommand = async (message: TelegramBot.Message) => {
@@ -384,6 +394,7 @@ export class TelegramService implements ITelegramService {
       this.votedUsers.clear();
       this.retractedUsers.clear();
       this.needsFollowUpUsers = new Set<number>();
+      this.messagesSinceLastPoll = 0;
 
       const message = await this.bot.sendPoll(
         this.configService.get<string>('GROUP_CHAT_ID'),
@@ -397,6 +408,7 @@ export class TelegramService implements ITelegramService {
       );
 
       this.currentPollId = message.message_id;
+      await this.saveBotMessage(message);
       return message;
     } catch (error) {
       this.logger.error('Telegram Sending Vote Failed ====>', error);
@@ -574,7 +586,7 @@ export class TelegramService implements ITelegramService {
     try {
       await this.bot.sendMessage(
         this.configService.get<string>('GROUP_CHAT_ID'),
-        'متأسف��نه مشکلی پیش آمده است. لطفاً دوباره تلاش کنید.',
+        'متأسفانه مشکلی پیش آمده است. لطفاً دوباره تلاش کنید.',
       );
     } catch (e) {
       this.logger.error('Failed to send error message:', e);
@@ -651,17 +663,23 @@ export class TelegramService implements ITelegramService {
 
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
 
-      for (const messageId of this.messageIds) {
+      // پاک کردن همه پیام‌های بات
+      for (const messageId of this.botMessages) {
         try {
           await this.bot.deleteMessage(chatId, messageId);
         } catch (error) {
-          this.logger.warn(`Failed to delete message ${messageId}:`, error);
+          // اگر پیام قبلاً پاک شده باشد، خطا را نادیده بگیر
+          if (error.response?.statusCode !== 400) {
+            this.logger.warn(`Failed to delete message ${messageId}:`, error);
+          }
         }
       }
 
+      // پاک کردن دستور
       await this.bot.deleteMessage(chatId, msg.message_id);
 
-      this.messageIds = [];
+      // پاک کردن همه پیام‌های ذخیره شده
+      this.botMessages.clear();
     } catch (error) {
       this.logger.error('Failed to clear messages:', error);
     }
@@ -791,4 +809,10 @@ export class TelegramService implements ITelegramService {
       this.logger.error('Failed to create new vote', error);
     }
   };
+
+  private async saveBotMessage(message: TelegramBot.Message) {
+    if (message && message.message_id) {
+      this.botMessages.add(message.message_id);
+    }
+  }
 }
