@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { TelegramService } from './providers/bot/node-telegram-bot-api/telegram/telegram.service';
 
 @Injectable()
@@ -8,8 +8,7 @@ export class AppService {
 
   constructor(private readonly telegramService: TelegramService) {}
 
-  // ارسال نظرسنجی روزانه ساعت 6 عصر
-  @Cron('0 40 18 * * *', {
+  @Cron(CronExpression.EVERY_DAY_AT_5AM, {
     timeZone: 'Asia/Tehran',
   })
   async sendDailyVote() {
