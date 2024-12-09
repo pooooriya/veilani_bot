@@ -830,11 +830,11 @@ export class TelegramService implements ITelegramService {
           break;
 
         case 'simulate_game':
-          await this.simulateGame(chatId);
+          await this.simulateGame(chatId.toString());
           break;
 
         case 'test_all':
-          await this.runAllTests(chatId);
+          await this.runAllTests(chatId.toString());
           break;
 
         case 'close_menu':
