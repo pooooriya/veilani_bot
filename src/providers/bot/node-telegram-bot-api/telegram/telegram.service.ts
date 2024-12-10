@@ -140,7 +140,7 @@ export class TelegramService implements ITelegramService {
       const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
-          `ت��داد رای فعلی: ${this.votedUsers.size} نفر\n` +
+          `تداد رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
       this.botMessages.add(reminderMsg.message_id);
@@ -216,6 +216,21 @@ export class TelegramService implements ITelegramService {
     }
   };
 
+  private async deleteMessageWithDelay(
+    chatId: string | number,
+    messageId: number,
+    delay: number = 60000,
+  ) {
+    setTimeout(async () => {
+      try {
+        await this.bot.deleteMessage(chatId, messageId);
+        this.botMessages.delete(messageId);
+      } catch (error) {
+        this.logger.debug(`Failed to delete delayed message ${messageId}`);
+      }
+    }, delay);
+  }
+
   private handlePollAnswer = async (pollAnswer: TelegramBot.PollAnswer) => {
     if (
       !this.validatePollAnswer(pollAnswer) ||
@@ -245,7 +260,7 @@ export class TelegramService implements ITelegramService {
             this.formatMessage(message, this.getMention(pollAnswer.user)),
             { parse_mode: 'Markdown' },
           );
-          this.messageIds.push(sentMessage.message_id);
+          await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
 
           await this.databaseService.updateUserStats(
             {
@@ -271,9 +286,9 @@ export class TelegramService implements ITelegramService {
               this.formatMessage(message, this.getMention(pollAnswer.user)),
               { parse_mode: 'Markdown' },
             );
-            this.messageIds.push(sentMessage.message_id);
+            await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
           } else if (selectedOption === 4) {
-            // حالت "نمیتونم بیام"
+            // حالت "نمیتونم بیام" - این پیام‌ها باقی می‌مانند
             const message = this.getRandomMessage(VoteMessages.voteRemoved);
             const sentMessage = await this.bot.sendMessage(
               chatId,
@@ -281,6 +296,7 @@ export class TelegramService implements ITelegramService {
               { parse_mode: 'Markdown' },
             );
             this.messageIds.push(sentMessage.message_id);
+            this.botMessages.add(sentMessage.message_id);
           } else {
             // رای به یکی از ساعت‌ها
             this.userVotes.set(userId, selectedOption);
@@ -290,7 +306,7 @@ export class TelegramService implements ITelegramService {
               this.formatMessage(message, this.getMention(pollAnswer.user)),
               { parse_mode: 'Markdown' },
             );
-            this.messageIds.push(sentMessage.message_id);
+            await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
 
             // آپدیت دیتابیس
             await this.databaseService.updateUserStats(
@@ -311,7 +327,10 @@ export class TelegramService implements ITelegramService {
                 this.formatMessage(VoteMessages.gameConfirmed, gameTime),
                 { parse_mode: 'Markdown' },
               );
-              this.messageIds.push(confirmMessage.message_id);
+              await this.deleteMessageWithDelay(
+                chatId,
+                confirmMessage.message_id,
+              );
 
               if (this.currentGameSession) {
                 await this.databaseService.updateGameSession(
@@ -336,7 +355,7 @@ export class TelegramService implements ITelegramService {
             this.formatMessage(message, this.getMention(pollAnswer.user)),
             { parse_mode: 'Markdown' },
           );
-          this.messageIds.push(sentMessage.message_id);
+          await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
         }
       }
     } catch (error) {
