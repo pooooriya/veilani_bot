@@ -5,7 +5,6 @@ export interface VoteParticipant {
   answer: number;
   timestamp: number;
 }
-
 export interface DailyVote {
   pollId: number;
   messageId: number;
