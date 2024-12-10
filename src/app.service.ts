@@ -8,7 +8,7 @@ export class AppService {
 
   constructor(private readonly telegramService: TelegramService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_5AM, {
+  @Cron(CronExpression.EVERY_DAY_AT_6PM, {
     timeZone: 'Asia/Tehran',
   })
   async sendDailyVote() {
