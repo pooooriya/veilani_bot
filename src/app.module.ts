@@ -5,7 +5,6 @@ import { DatabaseModule } from './database/database.module';
 import { TelegramModule } from './providers/bot/node-telegram-bot-api/telegram/telegram.module';
 import { AppService } from './app.service';
 import { configuration } from './config/configuration';
-import { AppController } from './app.controller';
 
 @Module({
   imports: [
