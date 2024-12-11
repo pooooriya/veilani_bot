@@ -18,6 +18,5 @@ import { AppController } from './app.controller';
      TelegramModule,
   ],
    providers: [AppService],
-  controllers: [AppController], 
 })
 export class AppModule {}

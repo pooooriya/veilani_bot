@@ -140,7 +140,7 @@ export class TelegramService implements ITelegramService {
       const reminderMsg = await this.bot.sendMessage(
         chatId,
         '📊 یادآوری نظرسنجی امشب:\n' +
-          `تداد رای فعلی: ${this.votedUsers.size} نفر\n` +
+          `تعداد رای فعلی: ${this.votedUsers.size} نفر\n` +
           `حد نصاب مورد نیاز: ${this.threshold} نفر`,
       );
       this.botMessages.add(reminderMsg.message_id);
@@ -397,14 +397,24 @@ export class TelegramService implements ITelegramService {
   private handleServerCommand = async (message: TelegramBot.Message) => {
     try {
       const serverDetails = 'connect 5.57.32.32:28441;password veilani';
-      await this.bot.sendMessage(message.chat.id, `\`${serverDetails}\``, {
+      const instructions = 
+        '1️⃣ اول این لینک رو باز کن:\n' +
+        '`c.veilani.ir` یا `connect.veilani.ir`\n\n' +
+        '2️⃣ تایید کن و صبر کن تا:\n' +
+        '• استیم باز بشه\n' +
+        '• بازی اجرا بشه\n' +
+        '• مستقیم وارد سرور بشی\n\n' +
+        '💡 اگه روش بالا کار نکرد، این دستور رو توی کنسول بازی وارد کن:\n' +
+        `\`${serverDetails}\``;
+
+      await this.bot.sendMessage(message.chat.id, instructions, {
         parse_mode: 'MarkdownV2',
       });
     } catch (error) {
       this.logger.error('Server command failed ====>', error);
       await this.bot.sendMessage(
         message.chat.id,
-        'متأسفانه مشکلی پیش آمده اس!',
+        'متأسفانه مشکلی پیش آمده است!',
       );
     }
   };
