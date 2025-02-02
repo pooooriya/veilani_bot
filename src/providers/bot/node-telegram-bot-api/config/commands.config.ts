@@ -10,5 +10,8 @@ export const CommandsConfig = {
     { command: 'admin', description: 'پنل مدیریت' },
     { command: 'new_vote', description: 'ایجاد نظرسنجی جدید' },
     { command: 'clear_messages', description: 'پاکسازی پیام‌های بات' },
+    { command: 'test_mode', description: 'فعال کردن حالت تست' },
+    { command: 'normal_mode', description: 'غیرفعال کردن حالت تست' },
+    { command: 'test_vote', description: 'ایجاد نظرسنجی تست' },
   ],
 };

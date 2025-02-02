@@ -27,6 +27,8 @@ export class TelegramService implements ITelegramService {
     new Map();
   private lastMapSelector: number = null;
   private mapSelectionHistory: Map<number, Date> = new Map();
+  private isTestMode: boolean = false;
+  private adminChatId: number = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -60,6 +62,21 @@ export class TelegramService implements ITelegramService {
     this.bot.on('callback_query', this.handleCallbackQuery);
     this.bot.onText(/\/help/, this.handleHelp);
     this.bot.onText(/\/start/, this.handleStart);
+    this.bot.onText(/\/test_mode/, async (msg) => {
+      if (msg.from.id === AdminConfig.ADMIN_ID) {
+        await this.toggleTestMode(msg.chat.id, true);
+      }
+    });
+    this.bot.onText(/\/normal_mode/, async (msg) => {
+      if (msg.from.id === AdminConfig.ADMIN_ID) {
+        await this.toggleTestMode(msg.chat.id, false);
+      }
+    });
+    this.bot.onText(/\/test_vote/, async (msg) => {
+      if (msg.from.id === AdminConfig.ADMIN_ID && this.isTestMode) {
+        await this.sendTestVote(msg.chat.id);
+      }
+    });
 
     // تنظیم کامندها برای BotFather
     this.setupBotCommands();
@@ -67,14 +84,18 @@ export class TelegramService implements ITelegramService {
 
   private async setupBotCommands() {
     try {
-      // تنظیم کامندهای عمومی برای همه گروه‌ها
+      // تنظیم کامندهای عمومی برای همه
       await this.bot.setMyCommands(CommandsConfig.PUBLIC_COMMANDS);
 
-      // تنظیم کامندهای ادمین فقط برای ادمین
+      // تنظیم کامندهای ادمین و تست برای ادمین
       const adminCommands = [
         ...CommandsConfig.PUBLIC_COMMANDS,
         ...CommandsConfig.ADMIN_COMMANDS,
+        { command: 'test_mode', description: 'فعال کردن حالت تست' },
+        { command: 'normal_mode', description: 'غیرفعال کردن حالت تست' },
+        { command: 'test_vote', description: 'ایجاد نظرسنجی تست' },
       ];
+
       await this.bot.setMyCommands(adminCommands, {
         scope: {
           type: 'chat',
@@ -226,21 +247,6 @@ export class TelegramService implements ITelegramService {
     }
   };
 
-  private async deleteMessageWithDelay(
-    chatId: string | number,
-    messageId: number,
-    delay: number = 60000,
-  ) {
-    setTimeout(async () => {
-      try {
-        await this.bot.deleteMessage(chatId, messageId);
-        this.botMessages.delete(messageId);
-      } catch (error) {
-        this.logger.debug(`Failed to delete delayed message ${messageId}`);
-      }
-    }, delay);
-  }
-
   private handlePollAnswer = async (pollAnswer: TelegramBot.PollAnswer) => {
     if (
       !this.validatePollAnswer(pollAnswer) ||
@@ -265,12 +271,12 @@ export class TelegramService implements ITelegramService {
 
           // فقط پیام خنثی برای برداشتن رای
           const message = this.getRandomMessage(VoteMessages.voteRetracted);
-          const sentMessage = await this.bot.sendMessage(
+          const sentMessage = await this.sendMessage(
             chatId,
             this.formatMessage(message, this.getMention(pollAnswer.user)),
             { parse_mode: 'Markdown' },
           );
-          await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
+          await this.saveBotMessage(sentMessage);
 
           await this.databaseService.updateUserStats(
             {
@@ -296,16 +302,16 @@ export class TelegramService implements ITelegramService {
             // حالت "بعداً اطلاع میدم"
             this.needsFollowUpUsers.add(userId);
             const message = this.getRandomMessage(VoteMessages.pendingDecision);
-            const sentMessage = await this.bot.sendMessage(
+            const sentMessage = await this.sendMessage(
               chatId,
               this.formatMessage(message, this.getMention(pollAnswer.user)),
               { parse_mode: 'Markdown' },
             );
-            await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
+            await this.saveBotMessage(sentMessage);
           } else if (selectedOption === 4) {
             // حالت "نمیتونم بیام" - این پیام‌ها باقی می‌مانند
             const message = this.getRandomMessage(VoteMessages.voteRemoved);
-            const sentMessage = await this.bot.sendMessage(
+            const sentMessage = await this.sendMessage(
               chatId,
               this.formatMessage(message, this.getMention(pollAnswer.user)),
               { parse_mode: 'Markdown' },
@@ -316,12 +322,12 @@ export class TelegramService implements ITelegramService {
             // رای به یکی از ساعت‌ها
             this.userVotes.set(userId, selectedOption);
             const message = this.getRandomMessage(VoteMessages.voteSubmitted);
-            const sentMessage = await this.bot.sendMessage(
+            const sentMessage = await this.sendMessage(
               chatId,
               this.formatMessage(message, this.getMention(pollAnswer.user)),
               { parse_mode: 'Markdown' },
             );
-            await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
+            await this.saveBotMessage(sentMessage);
 
             // آپدیت دیتابیس
             await this.databaseService.updateUserStats(
@@ -357,12 +363,12 @@ export class TelegramService implements ITelegramService {
           this.userVotes.set(userId, selectedOption);
 
           const message = this.getRandomMessage(VoteMessages.voteSubmitted);
-          const sentMessage = await this.bot.sendMessage(
+          const sentMessage = await this.sendMessage(
             chatId,
             this.formatMessage(message, this.getMention(pollAnswer.user)),
             { parse_mode: 'Markdown' },
           );
-          await this.deleteMessageWithDelay(chatId, sentMessage.message_id);
+          await this.saveBotMessage(sentMessage);
         }
       }
     } catch (error) {
@@ -635,7 +641,7 @@ export class TelegramService implements ITelegramService {
   private async handleError(error: any, context: string) {
     this.logger.error(`Error in ${context}:`, error);
     try {
-      await this.bot.sendMessage(
+      await this.sendMessage(
         this.configService.get<string>('GROUP_CHAT_ID'),
         'متأسفانه مشکلی پیش آمده است. لطفاً دوباره تلاش کنید.',
       );
@@ -923,15 +929,12 @@ export class TelegramService implements ITelegramService {
   };
 
   private async saveBotMessage(message: TelegramBot.Message) {
-    if (message && message.message_id) {
-      this.botMessages.add(message.message_id);
-      this.logger.debug(`Saved bot message: ${message.message_id}`);
-    }
+    this.botMessages.add(message.message_id);
   }
 
   private async simulateGame(chatId: string) {
     try {
-      await this.bot.sendMessage(chatId, '🎮 شروع شبیه‌سازی بازی...');
+      await this.sendMessage(chatId, '🎮 شروع شبیه‌سازی بازی...');
 
       // ایجاد نظرسنجی جدید
       await this.resetVoteData();
@@ -960,15 +963,25 @@ export class TelegramService implements ITelegramService {
       // شبیه‌سازی تغییر رای از "بعداً اطلاع میدم" به یک ساعت
       await this.simulateFollowUpDecision();
 
-      await this.bot.sendMessage(chatId, '✅ شبیه‌سازی با موفقیت انجام شد.');
+      await this.sendMessage(chatId, '✅ شبیه‌سازی با موفقیت انجام شد.');
     } catch (error) {
       this.logger.error('Failed to simulate game', error);
     }
   }
 
   private async runAllTests(chatId: string) {
+    if (!this.isTestMode) {
+      const targetChatId = this.adminChatId || chatId;
+      await this.bot.sendMessage(
+        targetChatId,
+        '❌ لطفاً ابتدا با دستور test_mode/ حالت تست را فعال کنید.',
+      );
+      return;
+    }
+
     try {
-      await this.bot.sendMessage(chatId, '🔄 شروع تست تمام قابلیت‌ها...');
+      const targetChatId = this.adminChatId || chatId;
+      await this.bot.sendMessage(targetChatId, '🔄 شروع تست تمام قابلیت‌ها...');
 
       const tests = [
         { name: 'ایجاد نظرسنجی', fn: async () => await this.sendVote() },
@@ -985,6 +998,23 @@ export class TelegramService implements ITelegramService {
         { name: 'پیگیری', fn: async () => await this.checkFollowUps() },
         { name: 'بررسی نهایی', fn: async () => await this.finalCheck() },
         {
+          name: 'رسیدن به حد نصاب',
+          fn: async () => {
+            // شبیه‌سازی رای‌های کافی برای رسیدن به حد نصاب
+            for (let i = 0; i < this.threshold; i++) {
+              await this.simulateVote(0);
+            }
+          },
+        },
+        {
+          name: 'انتخاب مپ',
+          fn: async () => {
+            await this.askForMapSelection();
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await this.simulateMapSelection();
+          },
+        },
+        {
           name: 'آمار',
           fn: async () => await this.databaseService.getGameStats(),
         },
@@ -1000,17 +1030,17 @@ export class TelegramService implements ITelegramService {
       for (const test of tests) {
         try {
           await test.fn();
-          await this.bot.sendMessage(chatId, `✅ تست ${test.name} موفق`);
+          await this.bot.sendMessage(targetChatId, `✅ تست ${test.name} موفق`);
         } catch (error) {
           await this.bot.sendMessage(
-            chatId,
+            targetChatId,
             `❌ تست ${test.name} ناموفق: ${error.message}`,
           );
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
-      await this.bot.sendMessage(chatId, '🏁 تست‌ها به پایان رسید.');
+      await this.bot.sendMessage(targetChatId, '🏁 تست‌ها به پایان رسید.');
     } catch (error) {
       this.logger.error('Failed to run all tests', error);
     }
@@ -1171,7 +1201,7 @@ export class TelegramService implements ITelegramService {
   private async announceGameConfirmation(gameTime: string) {
     try {
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
-      const message = await this.bot.sendMessage(
+      const message = await this.sendMessage(
         chatId,
         this.formatMessage(VoteMessages.gameConfirmed, gameTime),
         { parse_mode: 'Markdown' },
@@ -1184,5 +1214,50 @@ export class TelegramService implements ITelegramService {
     } catch (error) {
       this.logger.error('Failed to announce game confirmation', error);
     }
+  }
+
+  private async toggleTestMode(chatId: number, enabled: boolean) {
+    this.isTestMode = enabled;
+    this.adminChatId = enabled ? chatId : null;
+    await this.bot.sendMessage(
+      chatId,
+      enabled
+        ? '🔬 حالت تست فعال شد. پیام‌ها فقط برای شما ارسال می‌شوند.'
+        : '🔄 حالت عادی فعال شد.',
+    );
+  }
+
+  private async sendTestVote(chatId: number): Promise<TelegramBot.Message> {
+    try {
+      this.votedUsers.clear();
+      this.retractedUsers.clear();
+      this.needsFollowUpUsers = new Set<number>();
+      this.messagesSinceLastPoll = 0;
+
+      const message = await this.bot.sendPoll(
+        chatId,
+        VoteConfig.question,
+        VoteConfig.options.map((item) => item.title),
+        {
+          allows_multiple_answers: false,
+          is_anonymous: false,
+        },
+      );
+
+      this.currentPollId = message.message_id;
+      await this.saveBotMessage(message);
+      return message;
+    } catch (error) {
+      this.logger.error('Test vote sending failed:', error);
+    }
+  }
+
+  protected async sendMessage(
+    chatId: string | number,
+    text: string,
+    options?: any,
+  ) {
+    const targetChatId = this.isTestMode ? this.adminChatId : chatId;
+    return await this.bot.sendMessage(targetChatId, text, options);
   }
 }
