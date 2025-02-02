@@ -1146,14 +1146,43 @@ export class TelegramService implements ITelegramService {
     // شبیه‌سازی انتخاب مپ
     setTimeout(async () => {
       if (this.lastMapSelector) {
-        const fakeMessage = {
-          chat: { id: chatId },
-          from: { id: this.lastMapSelector },
+        const fakeMessage: TelegramBot.Message = {
+          message_id: Math.floor(Math.random() * 1000000),
+          date: Math.floor(Date.now() / 1000),
+          chat: {
+            id: Number(chatId),
+            type: 'group',
+            title: 'Test Group',
+          },
+          from: {
+            id: this.lastMapSelector,
+            is_bot: false,
+            first_name: 'Test',
+            username: 'test_user',
+          },
           text: '1 3', // انتخاب مپ‌های 1 و 3
-        } as TelegramBot.Message;
+        };
 
         await this.processMapSelection(fakeMessage);
       }
     }, 2000);
+  }
+
+  private async announceGameConfirmation(gameTime: string) {
+    try {
+      const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+      const message = await this.bot.sendMessage(
+        chatId,
+        this.formatMessage(VoteMessages.gameConfirmed, gameTime),
+        { parse_mode: 'Markdown' },
+      );
+
+      this.botMessages.add(message.message_id);
+
+      // Ask for map selection after game confirmation
+      await this.askForMapSelection();
+    } catch (error) {
+      this.logger.error('Failed to announce game confirmation', error);
+    }
   }
 }
