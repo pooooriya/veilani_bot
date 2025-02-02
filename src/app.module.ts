@@ -12,10 +12,10 @@ import { configuration } from './config/configuration';
       load: [configuration],
       isGlobal: true,
     }),
-     ScheduleModule.forRoot(),
-     DatabaseModule,
-     TelegramModule,
+    ScheduleModule.forRoot(),
+    DatabaseModule,
+    TelegramModule,
   ],
-   providers: [AppService],
+  providers: [AppService],
 })
 export class AppModule {}

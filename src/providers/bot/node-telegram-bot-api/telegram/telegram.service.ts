@@ -7,6 +7,7 @@ import { VoteMessages } from '../config/messages.config';
 import { DatabaseService } from 'src/database/database.service';
 import { AdminConfig } from '../config/admin.config';
 import { CommandsConfig } from '../config/commands.config';
+import { MapsConfig } from '../config/maps.config';
 
 @Injectable()
 export class TelegramService implements ITelegramService {
@@ -22,6 +23,10 @@ export class TelegramService implements ITelegramService {
   private userVotes: Map<number, number> = new Map();
   private messageIds: number[] = [];
   private botMessages: Set<number> = new Set();
+  private userInfo: Map<number, { username?: string; first_name: string }> =
+    new Map();
+  private lastMapSelector: number = null;
+  private mapSelectionHistory: Map<number, Date> = new Map();
 
   constructor(
     private readonly configService: ConfigService,
@@ -122,6 +127,11 @@ export class TelegramService implements ITelegramService {
     if (
       msg.chat.id.toString() === this.configService.get<string>('GROUP_CHAT_ID')
     ) {
+      if (this.lastMapSelector && msg.from.id === this.lastMapSelector) {
+        await this.processMapSelection(msg);
+        return;
+      }
+
       if (!msg.from.is_bot) {
         this.messagesSinceLastPoll++;
 
@@ -276,6 +286,11 @@ export class TelegramService implements ITelegramService {
 
         if (!wasVoted) {
           this.votedUsers.add(userId);
+          // ذخیره اطلاعات کاربر
+          this.userInfo.set(userId, {
+            username: pollAnswer.user.username,
+            first_name: pollAnswer.user.first_name,
+          });
 
           if (selectedOption === 3) {
             // حالت "بعداً اطلاع میدم"
@@ -322,15 +337,7 @@ export class TelegramService implements ITelegramService {
             const activeVoters = this.getActiveVotersCount();
             if (activeVoters >= this.threshold) {
               const gameTime = this.determineGameTime();
-              const confirmMessage = await this.bot.sendMessage(
-                chatId,
-                this.formatMessage(VoteMessages.gameConfirmed, gameTime),
-                { parse_mode: 'Markdown' },
-              );
-              await this.deleteMessageWithDelay(
-                chatId,
-                confirmMessage.message_id,
-              );
+              await this.announceGameConfirmation(gameTime);
 
               if (this.currentGameSession) {
                 await this.databaseService.updateGameSession(
@@ -397,7 +404,7 @@ export class TelegramService implements ITelegramService {
   private handleServerCommand = async (message: TelegramBot.Message) => {
     try {
       const serverDetails = 'connect 5.57.32.32:28441;password veilani';
-      const instructions = 
+      const instructions =
         '1️⃣ اول این لینک رو باز کن:\n' +
         '`c.veilani.ir` یا `connect.veilani.ir`\n\n' +
         '2️⃣ تایید کن و صبر کن تا:\n' +
@@ -526,8 +533,20 @@ export class TelegramService implements ITelegramService {
 
   private getPlayersList(): string {
     return Array.from(this.votedUsers)
-      .filter((uid) => !this.needsFollowUpUsers.has(uid))
-      .map((uid) => `[@${uid}](tg://user?id=${uid})`)
+      .filter((uid) => {
+        const vote = this.userVotes.get(uid);
+        return (
+          !this.needsFollowUpUsers.has(uid) && vote !== undefined && vote < 3
+        );
+      })
+      .map((uid) => {
+        const userInfo = this.userInfo.get(uid);
+        if (!userInfo) return `[Unknown](tg://user?id=${uid})`;
+
+        return userInfo.username
+          ? `[@${userInfo.username}](tg://user?id=${uid})`
+          : `[${userInfo.first_name}](tg://user?id=${uid})`;
+      })
       .join('\n');
   }
 
@@ -549,9 +568,11 @@ export class TelegramService implements ITelegramService {
     this.retractedUsers.clear();
     this.needsFollowUpUsers.clear();
     this.userVotes.clear();
+    this.userInfo.clear();
     this.messagesSinceLastPoll = 0;
     this.currentPollId = null;
     this.currentGameSession = null;
+    this.lastMapSelector = null;
     this.logger.log('Vote data has been reset for the new day');
   }
 
@@ -560,7 +581,14 @@ export class TelegramService implements ITelegramService {
 
     if (this.needsFollowUpUsers.size > 0) {
       const followUpMentions = Array.from(this.needsFollowUpUsers)
-        .map((uid) => `[@${uid}](tg://user?id=${uid})`)
+        .map((uid) => {
+          const userInfo = this.userInfo.get(uid);
+          if (!userInfo) return `[Unknown](tg://user?id=${uid})`;
+
+          return userInfo.username
+            ? `[@${userInfo.username}](tg://user?id=${uid})`
+            : `[${userInfo.first_name}](tg://user?id=${uid})`;
+        })
         .join(' ');
       const message = await this.bot.sendMessage(
         chatId,
@@ -865,6 +893,10 @@ export class TelegramService implements ITelegramService {
             show_alert: true,
           });
           break;
+
+        case 'test_map_selection':
+          await this.simulateMapSelection();
+          break;
       }
 
       // حذف loading از دکمه
@@ -1018,5 +1050,110 @@ export class TelegramService implements ITelegramService {
         poll_id: 'test',
       } as TelegramBot.PollAnswer);
     }
+  }
+
+  private async selectMapSelector(): Promise<number> {
+    const activeVoters = Array.from(this.votedUsers).filter((uid) => {
+      const vote = this.userVotes.get(uid);
+      return (
+        !this.needsFollowUpUsers.has(uid) && vote !== undefined && vote < 3
+      );
+    });
+
+    if (activeVoters.length === 0) return null;
+
+    // محاسبه امتیاز برای هر کاربر بر اساس آخرین انتخاب
+    const voterScores = activeVoters.map((uid) => {
+      const lastSelection = this.mapSelectionHistory.get(uid);
+      const score = lastSelection
+        ? Date.now() - lastSelection.getTime()
+        : Number.MAX_SAFE_INTEGER;
+      return { uid, score };
+    });
+
+    // مرتب‌سازی بر اساس امتیاز (بیشترین زمان گذشته از آخرین انتخاب)
+    voterScores.sort((a, b) => b.score - a.score);
+
+    // انتخاب از بین 3 نفر اول با بیشترین امتیاز
+    const topThree = voterScores.slice(0, Math.min(3, voterScores.length));
+    const selectedIndex = Math.floor(Math.random() * topThree.length);
+    return topThree[selectedIndex].uid;
+  }
+
+  private async askForMapSelection() {
+    try {
+      const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+      const selector = await this.selectMapSelector();
+
+      if (!selector) {
+        this.logger.warn('No eligible players for map selection');
+        return;
+      }
+
+      this.lastMapSelector = selector;
+      const userInfo = this.userInfo.get(selector);
+      const mention = userInfo?.username
+        ? `@${userInfo.username}`
+        : `[${userInfo?.first_name || 'Unknown'}](tg://user?id=${selector})`;
+
+      const mapsList = MapsConfig.availableMaps
+        .map((map, index) => `${index + 1}. ${map}`)
+        .join('\n');
+
+      const message = await this.bot.sendMessage(
+        chatId,
+        this.formatMessage(MapsConfig.messages.mapSelection, mention, mapsList),
+        { parse_mode: 'Markdown' },
+      );
+
+      this.botMessages.add(message.message_id);
+    } catch (error) {
+      this.logger.error('Failed to ask for map selection', error);
+    }
+  }
+
+  private async processMapSelection(msg: TelegramBot.Message) {
+    if (msg.from.id !== this.lastMapSelector) return;
+
+    const mapNumbers = msg.text.match(/\d+/g)?.map(Number) || [];
+    const selectedMaps = mapNumbers
+      .filter((n) => n >= 1 && n <= MapsConfig.availableMaps.length)
+      .map((n) => MapsConfig.availableMaps[n - 1]);
+
+    if (selectedMaps.length !== 2) {
+      await this.bot.sendMessage(
+        msg.chat.id,
+        MapsConfig.messages.invalidSelection,
+      );
+      return;
+    }
+
+    // ذخیره زمان انتخاب برای این کاربر
+    this.mapSelectionHistory.set(msg.from.id, new Date());
+    this.lastMapSelector = null;
+
+    await this.bot.sendMessage(
+      msg.chat.id,
+      this.formatMessage(MapsConfig.messages.mapsAnnouncement, ...selectedMaps),
+      { parse_mode: 'Markdown' },
+    );
+  }
+
+  private async simulateMapSelection() {
+    const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+    await this.askForMapSelection();
+
+    // شبیه‌سازی انتخاب مپ
+    setTimeout(async () => {
+      if (this.lastMapSelector) {
+        const fakeMessage = {
+          chat: { id: chatId },
+          from: { id: this.lastMapSelector },
+          text: '1 3', // انتخاب مپ‌های 1 و 3
+        } as TelegramBot.Message;
+
+        await this.processMapSelection(fakeMessage);
+      }
+    }, 2000);
   }
 }
