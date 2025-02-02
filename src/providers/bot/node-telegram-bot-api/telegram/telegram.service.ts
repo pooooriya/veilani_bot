@@ -260,7 +260,39 @@ export class TelegramService implements ITelegramService {
     }
   };
 
-  private handlePollAnswer = async (pollAnswer: TelegramBot.PollAnswer) => {
+  private async handlePollAnswer(pollAnswer: TelegramBot.PollAnswer) {
+    // اگر این یک نظرسنجی انتخاب مپ است
+    if (
+      this.currentMapPoll &&
+      this.currentMapPoll.messageId === Number(pollAnswer.poll_id)
+    ) {
+      // اگر کاربر انتخاب کننده مپ نیست
+      if (pollAnswer.user.id !== this.currentMapPoll.selector) {
+        const funnyMessages = [
+          'زرنگ بازی در مرکب ویلانی جایی نداره دوست عزیز! 😏',
+          'نه دیگه، اینجوریاست؟ فقط یه نفر می‌تونه مپ انتخاب کنه! 😅',
+          'عجب رویی داری شما! نوبت شما نیست که مپ انتخاب کنی! 😆',
+          'یه وقت خسته نشی از این همه تلاش برای رای دادن! 😂',
+          'مگه نمی‌دونی فقط یه نفر می‌تونه مپ انتخاب کنه؟ 🤔',
+        ];
+
+        const randomMessage =
+          funnyMessages[Math.floor(Math.random() * funnyMessages.length)];
+        const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+        const userMention = this.getMention(pollAnswer.user);
+
+        const message = await this.sendMessage(
+          chatId,
+          `${userMention} ${randomMessage}`,
+          { parse_mode: 'Markdown' },
+        );
+
+        this.botMessages.add(message.message_id);
+        return;
+      }
+    }
+
+    // برای نظرسنجی‌های عادی، منطق قبلی را اجرا کن
     if (
       !this.validatePollAnswer(pollAnswer) ||
       !this.validateUserData(pollAnswer.user)
@@ -402,7 +434,7 @@ export class TelegramService implements ITelegramService {
     } catch (error) {
       await this.handleError(error, 'handlePollAnswer');
     }
-  };
+  }
 
   private getMention(user: TelegramBot.User): string {
     return `[${user.first_name}](tg://user?id=${user.id})`;
@@ -1199,21 +1231,27 @@ export class TelegramService implements ITelegramService {
       const selectedMapIndex = pollAnswer.option_ids[0];
       const selectedMap = MapsConfig.availableMaps[selectedMapIndex];
 
+      // حذف close_date و اضافه کردن گزینه‌های poll
+      const pollOptions: TelegramBot.SendPollOptions = {
+        is_anonymous: false,
+        allows_multiple_answers: false,
+      };
+
+      // بستن نظرسنجی فعلی بعد از ثبت رای
+      await this.bot.stopPoll(chatId, this.currentMapPoll.messageId);
+
       if (this.currentMapPoll.stage === 'first') {
-        // Save first map selection
         this.currentMapPoll.firstMap = selectedMap;
         this.currentMapPoll.stage = 'second';
 
-        // Create second map poll excluding the first selected map
         const remainingMaps = MapsConfig.availableMaps.filter(
           (map) => map !== selectedMap,
         );
+
         const userInfo = this.userInfo.get(pollAnswer.user.id);
         const mention = userInfo?.username
           ? `@${userInfo.username}`
-          : `[${userInfo?.first_name || 'Unknown'}](tg://user?id=${
-              pollAnswer.user.id
-            })`;
+          : `[${userInfo?.first_name || 'Unknown'}](tg://user?id=${pollAnswer.user.id})`;
 
         const mentionMessage = await this.sendMessage(
           chatId,
@@ -1225,17 +1263,13 @@ export class TelegramService implements ITelegramService {
           chatId,
           'انتخاب مپ دوم:',
           remainingMaps,
-          {
-            is_anonymous: false,
-            allows_multiple_answers: false,
-          },
+          pollOptions,
         );
 
         this.botMessages.add(mentionMessage.message_id);
         this.botMessages.add(secondPoll.message_id);
         this.currentMapPoll.messageId = secondPoll.message_id;
       } else if (this.currentMapPoll.stage === 'second') {
-        // Announce final map selections
         const finalMessage = await this.sendMessage(
           chatId,
           this.formatMessage(
@@ -1248,8 +1282,6 @@ export class TelegramService implements ITelegramService {
 
         this.botMessages.add(finalMessage.message_id);
         this.mapsSelected = true;
-
-        // Save selection time and reset
         this.mapSelectionHistory.set(pollAnswer.user.id, new Date());
         this.lastMapSelector = null;
         this.currentMapPoll = null;
