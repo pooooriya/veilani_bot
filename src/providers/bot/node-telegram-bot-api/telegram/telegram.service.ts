@@ -37,6 +37,8 @@ export class TelegramService implements ITelegramService {
   private isTestMode: boolean = false;
   private adminChatId: number = null;
   private currentMapPoll: MapPollState | null = null;
+  private gameConfirmed: boolean = false;
+  private mapsSelected: boolean = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -271,6 +273,7 @@ export class TelegramService implements ITelegramService {
       const chatId = this.configService.get<string>('GROUP_CHAT_ID');
       const wasVoted = this.votedUsers.has(userId);
       const wasPending = this.needsFollowUpUsers.has(userId);
+      const previousActiveVoters = this.getActiveVotersCount();
 
       if (pollAnswer.option_ids.length === 0) {
         // برداشتن رای
@@ -280,7 +283,22 @@ export class TelegramService implements ITelegramService {
           this.retractedUsers.add(userId);
           this.userVotes.delete(userId);
 
-          // فقط پیام خنثی برای برداشتن رای
+          const currentActiveVoters = this.getActiveVotersCount();
+
+          // اگر تعداد از حد نصاب پایین‌تر رفت، وضعیت را ریست کنیم
+          if (
+            previousActiveVoters >= this.threshold &&
+            currentActiveVoters < this.threshold
+          ) {
+            this.gameConfirmed = false;
+            const message = await this.sendMessage(
+              chatId,
+              '⚠️ تعداد بازیکنان از حد نصاب کمتر شد. نیاز به رای‌گیری مجدد است.',
+              { parse_mode: 'Markdown' },
+            );
+            this.botMessages.add(message.message_id);
+          }
+
           const message = this.getRandomMessage(VoteMessages.voteRetracted);
           const sentMessage = await this.sendMessage(
             chatId,
@@ -303,7 +321,6 @@ export class TelegramService implements ITelegramService {
 
         if (!wasVoted) {
           this.votedUsers.add(userId);
-          // ذخیره اطلاعات کاربر
           this.userInfo.set(userId, {
             username: pollAnswer.user.username,
             first_name: pollAnswer.user.first_name,
@@ -340,7 +357,6 @@ export class TelegramService implements ITelegramService {
             );
             await this.saveBotMessage(sentMessage);
 
-            // آپدیت دیتابیس
             await this.databaseService.updateUserStats(
               {
                 id: userId,
@@ -352,7 +368,8 @@ export class TelegramService implements ITelegramService {
 
             // چک کردن حد نصاب
             const activeVoters = this.getActiveVotersCount();
-            if (activeVoters >= this.threshold) {
+            if (activeVoters >= this.threshold && !this.gameConfirmed) {
+              this.gameConfirmed = true;
               const gameTime = this.determineGameTime();
               await this.announceGameConfirmation(gameTime);
 
@@ -590,6 +607,8 @@ export class TelegramService implements ITelegramService {
     this.currentPollId = null;
     this.currentGameSession = null;
     this.lastMapSelector = null;
+    this.gameConfirmed = false;
+    this.mapsSelected = false;
     this.logger.log('Vote data has been reset for the new day');
   }
 
@@ -1169,7 +1188,8 @@ export class TelegramService implements ITelegramService {
   private async processMapSelection(pollAnswer: TelegramBot.PollAnswer) {
     if (
       !this.currentMapPoll ||
-      pollAnswer.user.id !== this.currentMapPoll.selector
+      pollAnswer.user.id !== this.currentMapPoll.selector ||
+      this.mapsSelected
     ) {
       return;
     }
@@ -1227,6 +1247,7 @@ export class TelegramService implements ITelegramService {
         );
 
         this.botMessages.add(finalMessage.message_id);
+        this.mapsSelected = true;
 
         // Save selection time and reset
         this.mapSelectionHistory.set(pollAnswer.user.id, new Date());
@@ -1288,11 +1309,12 @@ export class TelegramService implements ITelegramService {
         this.formatMessage(VoteMessages.gameConfirmed, gameTime),
         { parse_mode: 'Markdown' },
       );
-
       this.botMessages.add(message.message_id);
 
-      // Ask for map selection after game confirmation
-      await this.askForMapSelection();
+      // فقط اگر مپ‌ها هنوز انتخاب نشده‌اند، درخواست انتخاب مپ می‌دهیم
+      if (!this.mapsSelected) {
+        await this.askForMapSelection();
+      }
     } catch (error) {
       this.logger.error('Failed to announce game confirmation', error);
     }
