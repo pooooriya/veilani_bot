@@ -9,6 +9,13 @@ import { AdminConfig } from '../config/admin.config';
 import { CommandsConfig } from '../config/commands.config';
 import { MapsConfig } from '../config/maps.config';
 
+interface MapPollState {
+  selector: number;
+  firstMap: string | null;
+  messageId: number;
+  stage: 'first' | 'second';
+}
+
 @Injectable()
 export class TelegramService implements ITelegramService {
   private readonly logger = new Logger(TelegramService.name);
@@ -29,6 +36,7 @@ export class TelegramService implements ITelegramService {
   private mapSelectionHistory: Map<number, Date> = new Map();
   private isTestMode: boolean = false;
   private adminChatId: number = null;
+  private currentMapPoll: MapPollState | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -45,7 +53,16 @@ export class TelegramService implements ITelegramService {
     this.bot.onText(/\/stats/, this.handleStatsCommand);
     this.bot.onText(/\/top/, this.handleTopPlayersCommand);
     this.bot.onText(/\/game_stats/, this.handleGameStatsCommand);
-    this.bot.on('poll_answer', this.handlePollAnswer);
+    this.bot.on('poll_answer', async (pollAnswer) => {
+      if (
+        this.currentMapPoll &&
+        pollAnswer.user.id === this.currentMapPoll.selector
+      ) {
+        await this.processMapSelection(pollAnswer);
+      } else {
+        await this.handlePollAnswer(pollAnswer);
+      }
+    });
     this.bot.on('message', this.handleMessage);
     this.bot.onText(
       new RegExp(AdminConfig.COMMANDS.CLEAR_MESSAGES),
@@ -148,15 +165,9 @@ export class TelegramService implements ITelegramService {
     if (
       msg.chat.id.toString() === this.configService.get<string>('GROUP_CHAT_ID')
     ) {
-      if (this.lastMapSelector && msg.from.id === this.lastMapSelector) {
-        await this.processMapSelection(msg);
-        return;
-      }
-
       if (!msg.from.is_bot) {
         this.messagesSinceLastPoll++;
 
-        // هر 20 پیام، نظرسنجی رو دوباره ارسال می‌کنیم
         if (this.messagesSinceLastPoll >= 20 && this.currentPollId) {
           this.messagesSinceLastPoll = 0;
           await this.resendPoll();
@@ -1126,76 +1137,147 @@ export class TelegramService implements ITelegramService {
         ? `@${userInfo.username}`
         : `[${userInfo?.first_name || 'Unknown'}](tg://user?id=${selector})`;
 
-      const mapsList = MapsConfig.availableMaps
-        .map((map, index) => `${index + 1}. ${map}`)
-        .join('\n');
-
-      const message = await this.bot.sendMessage(
+      const message = await this.sendMessage(
         chatId,
-        this.formatMessage(MapsConfig.messages.mapSelection, mention, mapsList),
+        `${mention} لطفاً مپ اول را انتخاب کنید:`,
         { parse_mode: 'Markdown' },
       );
 
+      const poll = await this.sendPoll(
+        chatId,
+        'انتخاب مپ اول:',
+        MapsConfig.availableMaps,
+        {
+          is_anonymous: false,
+          allows_multiple_answers: false,
+        },
+      );
+
       this.botMessages.add(message.message_id);
+      this.botMessages.add(poll.message_id);
+      this.currentMapPoll = {
+        selector: selector,
+        firstMap: null,
+        messageId: poll.message_id,
+        stage: 'first',
+      };
     } catch (error) {
       this.logger.error('Failed to ask for map selection', error);
     }
   }
 
-  private async processMapSelection(msg: TelegramBot.Message) {
-    if (msg.from.id !== this.lastMapSelector) return;
-
-    const mapNumbers = msg.text.match(/\d+/g)?.map(Number) || [];
-    const selectedMaps = mapNumbers
-      .filter((n) => n >= 1 && n <= MapsConfig.availableMaps.length)
-      .map((n) => MapsConfig.availableMaps[n - 1]);
-
-    if (selectedMaps.length !== 2) {
-      await this.bot.sendMessage(
-        msg.chat.id,
-        MapsConfig.messages.invalidSelection,
-      );
+  private async processMapSelection(pollAnswer: TelegramBot.PollAnswer) {
+    if (
+      !this.currentMapPoll ||
+      pollAnswer.user.id !== this.currentMapPoll.selector
+    ) {
       return;
     }
 
-    // ذخیره زمان انتخاب برای این کاربر
-    this.mapSelectionHistory.set(msg.from.id, new Date());
-    this.lastMapSelector = null;
+    try {
+      const chatId = this.configService.get<string>('GROUP_CHAT_ID');
+      const selectedMapIndex = pollAnswer.option_ids[0];
+      const selectedMap = MapsConfig.availableMaps[selectedMapIndex];
 
-    await this.bot.sendMessage(
-      msg.chat.id,
-      this.formatMessage(MapsConfig.messages.mapsAnnouncement, ...selectedMaps),
-      { parse_mode: 'Markdown' },
-    );
+      if (this.currentMapPoll.stage === 'first') {
+        // Save first map selection
+        this.currentMapPoll.firstMap = selectedMap;
+        this.currentMapPoll.stage = 'second';
+
+        // Create second map poll excluding the first selected map
+        const remainingMaps = MapsConfig.availableMaps.filter(
+          (map) => map !== selectedMap,
+        );
+        const userInfo = this.userInfo.get(pollAnswer.user.id);
+        const mention = userInfo?.username
+          ? `@${userInfo.username}`
+          : `[${userInfo?.first_name || 'Unknown'}](tg://user?id=${
+              pollAnswer.user.id
+            })`;
+
+        const mentionMessage = await this.sendMessage(
+          chatId,
+          `${mention} لطفاً مپ دوم را انتخاب کنید:`,
+          { parse_mode: 'Markdown' },
+        );
+
+        const secondPoll = await this.sendPoll(
+          chatId,
+          'انتخاب مپ دوم:',
+          remainingMaps,
+          {
+            is_anonymous: false,
+            allows_multiple_answers: false,
+          },
+        );
+
+        this.botMessages.add(mentionMessage.message_id);
+        this.botMessages.add(secondPoll.message_id);
+        this.currentMapPoll.messageId = secondPoll.message_id;
+      } else if (this.currentMapPoll.stage === 'second') {
+        // Announce final map selections
+        const finalMessage = await this.sendMessage(
+          chatId,
+          this.formatMessage(
+            MapsConfig.messages.mapsAnnouncement,
+            this.currentMapPoll.firstMap,
+            selectedMap,
+          ),
+          { parse_mode: 'Markdown' },
+        );
+
+        this.botMessages.add(finalMessage.message_id);
+
+        // Save selection time and reset
+        this.mapSelectionHistory.set(pollAnswer.user.id, new Date());
+        this.lastMapSelector = null;
+        this.currentMapPoll = null;
+      }
+    } catch (error) {
+      this.logger.error('Failed to process map selection', error);
+    }
   }
 
   private async simulateMapSelection() {
-    const chatId = this.configService.get<string>('GROUP_CHAT_ID');
-    await this.askForMapSelection();
+    try {
+      await this.askForMapSelection();
 
-    // شبیه‌سازی انتخاب مپ
-    setTimeout(async () => {
-      if (this.lastMapSelector) {
-        const fakeMessage: TelegramBot.Message = {
-          message_id: Math.floor(Math.random() * 1000000),
-          date: Math.floor(Date.now() / 1000),
-          chat: {
-            id: Number(chatId),
-            type: 'group',
-            title: 'Test Group',
-          },
-          from: {
+      // شبیه‌سازی انتخاب مپ اول
+      if (this.currentMapPoll) {
+        const firstPollAnswer: TelegramBot.PollAnswer = {
+          poll_id: String(this.currentMapPoll.messageId),
+          user: {
             id: this.lastMapSelector,
             is_bot: false,
             first_name: 'Test',
             username: 'test_user',
           },
-          text: '1 3', // انتخاب مپ‌های 1 و 3
+          option_ids: [0], // انتخاب اولین مپ
         };
 
-        await this.processMapSelection(fakeMessage);
+        await this.processMapSelection(firstPollAnswer);
+
+        // شبیه‌سازی انتخاب مپ دوم بعد از 2 ثانیه
+        setTimeout(async () => {
+          if (this.currentMapPoll) {
+            const secondPollAnswer: TelegramBot.PollAnswer = {
+              poll_id: String(this.currentMapPoll.messageId),
+              user: {
+                id: this.lastMapSelector,
+                is_bot: false,
+                first_name: 'Test',
+                username: 'test_user',
+              },
+              option_ids: [1], // انتخاب دومین مپ از لیست باقیمانده
+            };
+
+            await this.processMapSelection(secondPollAnswer);
+          }
+        }, 2000);
       }
-    }, 2000);
+    } catch (error) {
+      this.logger.error('Failed to simulate map selection', error);
+    }
   }
 
   private async announceGameConfirmation(gameTime: string) {
@@ -1222,7 +1304,7 @@ export class TelegramService implements ITelegramService {
     await this.bot.sendMessage(
       chatId,
       enabled
-        ? '🔬 حالت تست فعال شد. پیام‌ها فقط برای شما ارسال می‌شوند.'
+        ? '🔄 حالت تست فعال شد. پیام‌ها فقط برای شما ارسال می‌شوند.'
         : '🔄 حالت عادی فعال شد.',
     );
   }
@@ -1259,5 +1341,20 @@ export class TelegramService implements ITelegramService {
   ) {
     const targetChatId = this.isTestMode ? this.adminChatId : chatId;
     return await this.bot.sendMessage(targetChatId, text, options);
+  }
+
+  protected async sendPoll(
+    chatId: string | number,
+    question: string,
+    options: string[],
+    pollOptions?: TelegramBot.SendPollOptions,
+  ) {
+    const targetChatId = this.isTestMode ? this.adminChatId : chatId;
+    return await this.bot.sendPoll(
+      targetChatId,
+      question,
+      options,
+      pollOptions,
+    );
   }
 }
